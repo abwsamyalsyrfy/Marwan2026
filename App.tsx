@@ -7,7 +7,7 @@ import AdminPanel from './components/AdminPanel';
 import AnalyticsReports from './components/AnalyticsReports';
 import LoginScreen from './components/LoginScreen';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from './types';
-import { Menu, Loader2 } from 'lucide-react';
+import { Menu, Loader2, WifiOff } from 'lucide-react';
 import { db } from './services/db';
 
 const App: React.FC = () => {
@@ -20,6 +20,7 @@ const App: React.FC = () => {
   
   // --- UI State ---
   const [isLoading, setIsLoading] = useState(true);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -42,9 +43,11 @@ const App: React.FC = () => {
         setAssignments(assignData);
         setLogs(logData);
         setSystemLogs(sysLogData);
-      } catch (error) {
-        console.error("Failed to load data", error);
-        alert("حدث خطأ أثناء تحميل البيانات. يرجى تحديث الصفحة.");
+        setIsOfflineMode(false);
+      } catch (error: any) {
+        console.error("Failed to load data (safely logged):", error?.message || error);
+        setIsOfflineMode(true);
+        // We don't alert here to avoid circular error crash loops, just set offline mode
       } finally {
         setIsLoading(false);
       }
@@ -60,19 +63,23 @@ const App: React.FC = () => {
     target: string, 
     details: string
   ) => {
-    const newLog: SystemAuditLog = {
-      id: `SYS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date().toISOString(),
-      actorName: actor ? actor.name : 'النظام/زائر',
-      actorId: actor ? actor.id : 'UNKNOWN',
-      actionType,
-      target,
-      details
-    };
-    
-    // Save to DB and State
-    await db.systemLogs.add(newLog);
-    setSystemLogs(prev => [newLog, ...prev]);
+    try {
+      const newLog: SystemAuditLog = {
+        id: `SYS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: new Date().toISOString(),
+        actorName: actor ? actor.name : 'النظام/زائر',
+        actorId: actor ? actor.id : 'UNKNOWN',
+        actionType,
+        target,
+        details
+      };
+      
+      // Save to DB and State
+      await db.systemLogs.add(newLog);
+      setSystemLogs(prev => [newLog, ...prev]);
+    } catch (e) {
+      console.warn("Could not record system log:", e);
+    }
   };
 
   // --- Logic: Calculate KPIs ---
@@ -300,6 +307,24 @@ const App: React.FC = () => {
       );
   }
 
+  // --- Offline Fallback UI ---
+  if (isOfflineMode && employees.length === 0) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
+                <WifiOff className="text-red-600" size={32} />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-800 mb-2">تعذر الاتصال بقاعدة البيانات</h1>
+              <p className="text-gray-600 max-w-md mb-6">
+                 النظام غير قادر على الوصول إلى خوادم Firebase. يرجى التحقق من اتصال الإنترنت أو إعدادات جدار الحماية (Firewall).
+              </p>
+              <button onClick={() => window.location.reload()} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">
+                إعادة المحاولة
+              </button>
+          </div>
+      );
+  }
+
   if (!currentUser) {
     return <LoginScreen employees={employees} onLogin={handleLogin} />;
   }
@@ -327,6 +352,16 @@ const App: React.FC = () => {
 
       <main className="flex-1 md:mr-64 min-h-screen transition-all print:mr-0 print:w-full print:h-auto print:overflow-visible">
         <div className="max-w-7xl mx-auto p-4 md:p-8 print:p-0 print:max-w-none print:w-full">
+          
+          {isOfflineMode && (
+            <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-3">
+               <WifiOff className="text-amber-600" size={20} />
+               <div>
+                  <h4 className="font-bold text-amber-800 text-sm">وضع عدم الاتصال</h4>
+                  <p className="text-amber-700 text-xs">تعذر الاتصال بالخادم. التغييرات قد لا تُحفظ.</p>
+               </div>
+            </div>
+          )}
           
           {activeTab === 'dashboard' && canViewDashboard && (
             <TaskDashboard 
