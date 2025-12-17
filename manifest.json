@@ -1,0 +1,20 @@
+{
+  "short_name": "TaskEase",
+  "name": "مُيسّر المهام - TaskEase",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9591/9591026.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9591/9591026.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#2563eb",
+  "background_color": "#f8fafc"
+}
