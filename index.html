@@ -33,75 +33,19 @@
       body {
         font-family: 'Tajawal', sans-serif;
         background-color: #f8fafc;
-        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        -webkit-tap-highlight-color: transparent;
       }
-      /* Custom scrollbar for cleaner look */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #f1f5f9; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1; 
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8; 
-      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: #f1f5f9; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-      /* Print specific styles for A4 */
       @media print {
-        @page {
-          size: A4;
-          margin: 10mm;
-        }
-        body {
-          margin: 0;
-          padding: 0;
-          background-color: white !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        #root {
-          width: 100% !important;
-        }
-        /* Hide non-printable elements */
-        .no-print, nav, header, aside, .sidebar-container, button:not(.print-show) {
-          display: none !important;
-        }
-        
-        /* Ensure charts and colors print correctly */
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          box-shadow: none !important;
-        }
-        
-        .break-before-page {
-          page-break-before: always;
-        }
-        .avoid-break {
-          page-break-inside: avoid;
-        }
-        
-        /* Improve table readability in print */
-        table {
-          width: 100% !important;
-          border-collapse: collapse;
-        }
-        th, td {
-          border: 1px solid #ddd !important;
-          padding: 8px !important;
-        }
-        
-        /* Reset heights/overflows for full content printing */
-        html, body, #root, main, .overflow-auto, .overflow-y-auto, .h-screen {
-          height: auto !important;
-          overflow: visible !important;
-          min-height: 0 !important;
-        }
+        @page { size: A4; margin: 10mm; }
+        body { background-color: white !important; -webkit-print-color-adjust: exact !important; }
+        .no-print, nav, header, aside, .sidebar-container, button:not(.print-show) { display: none !important; }
+        table { width: 100% !important; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd !important; padding: 8px !important; }
       }
     </style>
   <script type="importmap">
