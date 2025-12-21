@@ -31,7 +31,7 @@ export interface TaskLog {
   taskId: string; // Can be a routine TaskID or a generated ID for extra tasks
   taskType: 'Daily' | 'Extra'; 
   
-  // Updated Status to include Arabic values natively for better Excel import support
+  // Statuses
   status: 'Completed' | 'Pending' | 'NotApplicable' | 'Leave' | 'منفذة' | 'غير منفذة' | 'لا تنطبق' | 'إجازة' | 'عطلة' | string;
   
   description: string; // Snapshot of task description or Leave Reason
@@ -43,18 +43,16 @@ export interface TaskLog {
   managerNote?: string; // Reason for rejection or feedback
 }
 
-// New Interface for System Audit Logs (Admin Actions)
 export interface SystemAuditLog {
   id: string;
   timestamp: string;
-  actorName: string; // Who performed the action
+  actorName: string;
   actorId: string;
   actionType: 'LOGIN' | 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'CLEAR' | 'APPROVE' | 'REJECT'; 
-  target: string; // e.g., "Employee", "Task", "Settings"
-  details: string; // e.g., "Deleted employee Ahmed"
+  target: string;
+  details: string;
 }
 
-// Helper interface for the dashboard stats
 export interface DashboardStats {
   totalTasks: number;
   completedTasks: number;
@@ -66,7 +64,6 @@ export interface DashboardStats {
   activeTasksCount: number;
 }
 
-// Permission Constants
 export const PERMISSIONS = {
   VIEW_DASHBOARD: 'view_dashboard',
   LOG_TASKS: 'log_tasks',
@@ -89,10 +86,23 @@ export interface TaskAnalysis {
   steps: TaskAnalysisStep[];
 }
 
+export interface NAAnalysisResult {
+  reason: string;
+  suggestion: string;
+  alternativeTasks: string[];
+}
+
 export interface RoutineTask {
   id: string;
   title: string;
   description: string;
   frequency: string;
   analysis?: TaskAnalysis;
+}
+
+export interface Notification {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+  timestamp: number;
 }
