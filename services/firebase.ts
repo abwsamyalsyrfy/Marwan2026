@@ -19,19 +19,21 @@ const firebaseConfig = {
 
 // تهيئة التطبيق
 let app;
-let dbInstance;
+let dbInstance = null;
 
 try {
-    // التحقق من وجود القيم الافتراضية قبل التهيئة
-    if (firebaseConfig.apiKey !== "ضع_مفتاح_API_الجديد_هنا") {
+    // التحقق من أن المستخدم قام بتغيير القيم الافتراضية
+    const isConfigured = firebaseConfig.apiKey !== "ضع_مفتاح_API_الجديد_هنا" && firebaseConfig.apiKey !== "";
+    
+    if (isConfigured) {
         app = initializeApp(firebaseConfig);
         dbInstance = getFirestore(app);
-        console.log("تم الاتصال بقاعدة البيانات الجديدة بنجاح");
+        console.log("✅ Firebase: متصل بنجاح بالسحابة");
     } else {
-        console.warn("Firebase: يرجى تحديث مفاتيح الاتصال في ملف services/firebase.ts");
+        console.warn("⚠️ Firebase: مفاتيح الاتصال مفقودة. سيتم العمل بنمط التخزين المحلي (Offline Mode)");
     }
 } catch (error) {
-    console.error("Firebase initialization failed:", error);
+    console.error("❌ Firebase initialization failed:", error);
 }
 
 export const firestore = dbInstance;
