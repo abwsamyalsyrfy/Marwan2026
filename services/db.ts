@@ -24,9 +24,20 @@ const COLLECTIONS = {
 };
 
 const checkDb = () => {
-    if (!firestore) throw new Error("قاعدة البيانات غير متصلة");
+    if (!firestore) throw new Error("قاعدة البيانات غير متصلة. يرجى التأكد من ضبط الإعدادات في firebase.ts");
     return firestore;
 }
+
+/**
+ * دالة مساعدة لمسح مجموعة كاملة
+ */
+const clearCollection = async (collectionName: string) => {
+    const db = checkDb();
+    const snapshot = await getDocs(collection(db, collectionName));
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+};
 
 export const db = {
   employees: {
@@ -54,10 +65,7 @@ export const db = {
       await batch.commit();
     },
     clear: async () => {
-       const snapshot = await getDocs(collection(checkDb(), COLLECTIONS.EMPLOYEES));
-       const batch = writeBatch(checkDb());
-       snapshot.docs.forEach((d) => batch.delete(d.ref));
-       await batch.commit();
+       await clearCollection(COLLECTIONS.EMPLOYEES);
     }
   },
 
@@ -86,10 +94,7 @@ export const db = {
       await batch.commit();
     },
     clear: async () => {
-       const snapshot = await getDocs(collection(checkDb(), COLLECTIONS.TASKS));
-       const batch = writeBatch(checkDb());
-       snapshot.docs.forEach((d) => batch.delete(d.ref));
-       await batch.commit();
+       await clearCollection(COLLECTIONS.TASKS);
     }
   },
 
@@ -114,10 +119,7 @@ export const db = {
       await batch.commit();
     },
     clear: async () => {
-       const snapshot = await getDocs(collection(checkDb(), COLLECTIONS.ASSIGNMENTS));
-       const batch = writeBatch(checkDb());
-       snapshot.docs.forEach((d) => batch.delete(d.ref));
-       await batch.commit();
+       await clearCollection(COLLECTIONS.ASSIGNMENTS);
     }
   },
 
@@ -152,10 +154,7 @@ export const db = {
       await batch.commit();
     },
     clear: async () => {
-       const snapshot = await getDocs(collection(checkDb(), COLLECTIONS.LOGS));
-       const batch = writeBatch(checkDb());
-       snapshot.docs.forEach((d) => batch.delete(d.ref));
-       await batch.commit();
+       await clearCollection(COLLECTIONS.LOGS);
     }
   },
 
@@ -169,6 +168,9 @@ export const db = {
     save: async (insight: TeamInsight): Promise<void> => {
       const id = `INSIGHT-${Date.now()}`;
       await setDoc(doc(checkDb(), COLLECTIONS.INSIGHTS, id), { ...insight, id });
+    },
+    clear: async () => {
+      await clearCollection(COLLECTIONS.INSIGHTS);
     }
   },
 
@@ -179,12 +181,27 @@ export const db = {
     },
     add: async (item: SystemAuditLog): Promise<void> => {
       await setDoc(doc(checkDb(), COLLECTIONS.SYSTEM_LOGS, item.id), item);
+    },
+    clear: async () => {
+      await clearCollection(COLLECTIONS.SYSTEM_LOGS);
     }
   },
 
   factoryReset: async () => {
-    if(window.confirm("هذا الإجراء سيحذف البيانات المحلية ويحاول تصفير السحابية.")) {
-        window.location.reload();
+    if(window.confirm("تحذير: هذا الإجراء سيقوم بحذف كافة البيانات (موظفين، مهام، سجلات) نهائياً من السحابة. هل أنت متأكد؟")) {
+        try {
+            await clearCollection(COLLECTIONS.LOGS);
+            await clearCollection(COLLECTIONS.ASSIGNMENTS);
+            await clearCollection(COLLECTIONS.TASKS);
+            await clearCollection(COLLECTIONS.EMPLOYEES);
+            await clearCollection(COLLECTIONS.SYSTEM_LOGS);
+            await clearCollection(COLLECTIONS.INSIGHTS);
+            alert("تم تصفير قاعدة البيانات بنجاح.");
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+            alert("حدث خطأ أثناء التصفير، يرجى التحقق من صلاحيات Firebase.");
+        }
     }
   }
 };
