@@ -1,255 +1,461 @@
 
-import React, { useMemo, useState } from 'react';
-import { DashboardStats, TaskLog, Employee } from '../types';
-import { BarChart3, CheckCircle2, Trophy, RefreshCw, Briefcase, CalendarCheck, Users, Activity, Clock, Check, X, AlertCircle, Calendar } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { DashboardStats, TaskLog, Employee, TeamInsight, Task, Assignment } from '../types';
+import { 
+  BarChart3, CheckCircle2, Trophy, RefreshCw, Briefcase, 
+  CalendarCheck, Users, Activity, Clock, Check, X, 
+  AlertCircle, Sparkles, Loader2, ArrowUpRight, 
+  TrendingUp, Zap, Target, Award, ChevronRight, PieChart,
+  ShieldCheck, AlertOctagon, UserCheck, UserX, MessageSquare,
+  LayoutGrid, ListChecks, Layers
+} from 'lucide-react';
+import { getTeamPerformanceInsights } from '../services/geminiService';
+import { db } from '../services/db';
 
 interface TaskDashboardProps {
   currentUser: Employee;
   logs: TaskLog[]; 
   employees?: Employee[]; 
+  tasks?: Task[];
+  assignments?: Assignment[];
   onRefresh: () => void;
   onStartLogging: () => void;
   onApproveLog?: (logId: string) => void;
   onRejectLog?: (logId: string, reason: string) => void;
 }
 
-const TaskDashboard: React.FC<TaskDashboardProps> = ({ currentUser, logs, employees = [], onRefresh, onStartLogging, onApproveLog, onRejectLog }) => {
+const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
+  currentUser, logs, employees = [], tasks = [], assignments = [], 
+  onRefresh, onStartLogging, onApproveLog, onRejectLog 
+}) => {
   const isAdmin = currentUser.role === 'Admin';
-  const [rejectId, setRejectId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month'>('week');
+  
+  // AI Insight State
+  const [insights, setInsights] = useState<TeamInsight | null>(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+
+  useEffect(() => {
+    const loadCached = async () => {
+      if (!isAdmin) return;
+      const cached = await db.insights.getLatest();
+      if (cached) setInsights(cached);
+    };
+    loadCached();
+  }, [isAdmin]);
+
+  const generateNewInsights = async () => {
+    if (!isAdmin || logs.length === 0) return;
+    setLoadingInsights(true);
+    try {
+      const data = await getTeamPerformanceInsights(logs, employees);
+      const insightWithTime: TeamInsight = {
+        ...data,
+        generatedAt: new Date().toISOString()
+      };
+      await db.insights.save(insightWithTime);
+      setInsights(insightWithTime);
+    } catch (e) {
+      console.error(e);
+      alert("تعذر توليد التحليلات حالياً، يرجى المحقق من الاتصال.");
+    } finally {
+      setLoadingInsights(false);
+    }
+  };
 
   const stats = useMemo(() => {
     const relevantLogs = isAdmin ? logs : logs.filter(l => l.employeeId === currentUser.id);
+    const approvedLogs = relevantLogs.filter(l => l.approvalStatus === 'Approved' || (!isAdmin && l.approvalStatus !== 'Rejected'));
     
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayLogs = logs.filter(l => String(l.logDate || '').startsWith(todayStr));
     
-    // فلترة السجلات المعتمدة حسب الفترة الزمنية المختارة للمؤشر
-    const timeFilteredApprovedLogs = relevantLogs.filter(l => {
-        if (l.approvalStatus !== 'Approved') return false;
-        const logDate = new Date(l.logDate);
-        if (timeRange === 'today') return l.logDate.startsWith(todayStr);
-        if (timeRange === 'week') {
-            const weekAgo = new Date();
-            weekAgo.setDate(now.getDate() - 7);
-            return logDate >= weekAgo;
-        }
-        if (timeRange === 'month') {
-            const monthAgo = new Date();
-            monthAgo.setMonth(now.getMonth() - 1);
-            return logDate >= monthAgo;
-        }
-        return true;
-    });
+    // Admin Specific: How many unique employees logged today?
+    const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
+    const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval');
 
-    const total = timeFilteredApprovedLogs.filter(l => l.status !== 'Leave').length;
-    const completed = timeFilteredApprovedLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
-    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    // Individual Progress
+    const userAssignments = assignments.filter(a => a.employeeId === currentUser.id);
+    const todayUserCompleted = logs.filter(l => l.employeeId === currentUser.id && l.logDate.startsWith(todayStr) && (l.status === 'Completed' || l.status === 'منفذة')).length;
+    const todayProgress = userAssignments.length > 0 ? Math.round((todayUserCompleted / userAssignments.length) * 100) : 0;
 
-    // بيانات الرسم البياني
+    const totalApproved = approvedLogs.length;
+    const completedCount = approvedLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+    const rate = totalApproved > 0 ? Math.round((completedCount / totalApproved) * 100) : 0;
+
+    // Routine vs Extra Workload (Admin only)
+    const workloadData = {
+      routine: todayLogs.filter(l => l.taskType === 'Daily').length,
+      extra: todayLogs.filter(l => l.taskType === 'Extra').length
+    };
+
+    // 7-Day Efficiency
     const chartData = [];
-    const daysToLookBack = timeRange === 'today' ? 1 : timeRange === 'week' ? 7 : 30;
-    
-    for (let i = daysToLookBack - 1; i >= 0; i--) {
+    for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const dayLogs = relevantLogs.filter(l => l.approvalStatus === 'Approved' && l.logDate.startsWith(dateStr));
-        
+        const dayLogs = logs.filter(l => String(l.logDate || '').startsWith(dateStr));
         chartData.push({
-            date: dateStr,
-            label: timeRange === 'month' ? d.getDate().toString() : d.toLocaleDateString('ar-EG', { weekday: 'short' }),
-            count: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
-            total: dayLogs.filter(l => l.status !== 'Leave').length
+            dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
+            completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
+            total: dayLogs.length
         });
     }
 
-    const pendingApprovalsList = isAdmin ? logs.filter(l => l.approvalStatus === 'PendingApproval') : [];
-    const pendingCount = relevantLogs.filter(l => l.approvalStatus === 'PendingApproval').length;
-
-    const recentActivity = [...relevantLogs]
-      .filter(l => l.approvalStatus === 'Approved')
-      .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime())
-      .slice(0, 8)
-      .map(log => ({ ...log, empName: employees.find(e => e.id === log.employeeId)?.name || log.employeeId }));
-
-    return { total, completed, rate, chartData, recentActivity, pendingCount, pendingApprovalsList };
-  }, [logs, currentUser.id, isAdmin, employees, timeRange]);
-
-  const handleRejectClick = (id: string) => {
-      setRejectId(id);
-      setRejectReason('');
-  };
-
-  const confirmReject = () => {
-      if (rejectId && onRejectLog) {
-          onRejectLog(rejectId, rejectReason || 'تم الرفض من قبل الإدارة');
-          setRejectId(null);
-      }
-  };
+    return { 
+      rate, todayProgress, chartData, pendingApprovalsList,
+      activeStaffToday, totalStaff: employees.length, workloadData,
+      totalLogs: logs.length,
+      todayUserCompleted,
+      totalUserAssigned: userAssignments.length
+    };
+  }, [logs, currentUser.id, isAdmin, assignments, employees]);
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Header with Time Selector */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-6">
+    <div className="space-y-8 animate-fade-in pb-12">
+      
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            {isAdmin ? <Activity className="text-indigo-600"/> : null} 
-            {isAdmin ? 'لوحة القيادة الإدارية' : `أهلاً بك، ${currentUser.name}`}
-          </h2>
-          <p className="text-gray-500 mt-1 text-sm">متابعة مؤشرات الأداء والمهام المعتمدة</p>
+          <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+            {isAdmin ? (
+              <div className="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-100">
+                <ShieldCheck size={32} />
+              </div>
+            ) : (
+              <div className="p-2.5 bg-amber-500 text-white rounded-2xl shadow-xl shadow-amber-100">
+                <Zap size={32} fill="white" />
+              </div>
+            )}
+            {isAdmin ? 'مركز قيادة النظام' : `مرحباً بك، ${currentUser.name.split(' ')[0]}`}
+          </h1>
+          <p className="text-gray-500 mt-2 font-medium">
+            {isAdmin 
+              ? `يوجد ${stats.pendingApprovalsList.length} سجل بانتظار مراجعتك اليوم.` 
+              : `أنجزت ${stats.todayUserCompleted} من أصل ${stats.totalUserAssigned} مهام روتينية.`}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-gray-100 p-1 rounded-xl shadow-inner">
-             <button onClick={() => setTimeRange('today')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${timeRange==='today'?'bg-white shadow-sm text-indigo-600':'text-gray-500 hover:text-gray-700'}`}>اليوم</button>
-             <button onClick={() => setTimeRange('week')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${timeRange==='week'?'bg-white shadow-sm text-indigo-600':'text-gray-500 hover:text-gray-700'}`}>الأسبوع</button>
-             <button onClick={() => setTimeRange('month')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${timeRange==='month'?'bg-white shadow-sm text-indigo-600':'text-gray-500 hover:text-gray-700'}`}>الشهر</button>
-          </div>
-          <button onClick={onRefresh} className="p-2 bg-white border border-gray-200 text-gray-400 rounded-lg hover:text-indigo-600 hover:border-indigo-100 transition-all">
-            <RefreshCw size={18} />
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={onStartLogging}
+            className="flex items-center gap-2 px-6 py-3.5 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg active:scale-95"
+          >
+            <PlusIcon /> {isAdmin ? 'إضافة سجل يدوي' : 'تسجيل مهام اليوم'}
           </button>
-          {!isAdmin && (
-            <button onClick={onStartLogging} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 font-bold transition-all">
-              <Calendar size={18} /> تسجيل المهام
-            </button>
+          <button onClick={onRefresh} className="p-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl hover:bg-gray-50 transition-colors shadow-sm">
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Main KPI Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {isAdmin ? (
+          <>
+            <StatCard label="التزام الفريق اليوم" value={`${Math.round((stats.activeStaffToday / stats.totalStaff) * 100 || 0)}%`} subLabel={`تفاعل ${stats.activeStaffToday} من ${stats.totalStaff}`} icon={<Users className="text-blue-600" />} color="blue" />
+            <StatCard label="طلبات المراجعة" value={stats.pendingApprovalsList.length} subLabel="تحتاج اعتماد إداري" icon={<Clock className="text-amber-600" />} color="amber" />
+            <StatCard label="كفاءة التنفيذ" value={`${stats.rate}%`} subLabel="إجمالي المهام المنجزة" icon={<Trophy className="text-indigo-600" />} color="indigo" />
+            <StatCard label="إجمالي القاعدة" value={stats.totalLogs} subLabel="سجلات ترحيل المهام" icon={<Layers className="text-emerald-600" />} color="emerald" />
+          </>
+        ) : (
+          <>
+            <StatCard label="معدل إنجازك" value={`${stats.rate}%`} subLabel="إجمالي مهامك المعتمدة" icon={<Award className="text-amber-600" />} color="amber" />
+            <StatCard label="مهام اليوم" value={`${stats.todayUserCompleted}/${stats.totalUserAssigned}`} subLabel="الالتزام بالروتين" icon={<Target className="text-emerald-600" />} color="emerald" />
+            <StatCard label="الحالة" value="نشط" subLabel="متصل بالنظام السحابي" icon={<UserCheck className="text-indigo-600" />} color="indigo" />
+            <StatCard label="الترتيب" value="#1" subLabel="فئة الموظفين المثاليين" icon={<Trophy className="text-blue-600" />} color="blue" />
+          </>
+        )}
+      </div>
+
+      {/* Grid: Action Center & Performance Analysis */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* Left Column: Urgent Actions (Admins) / Daily Progress (Users) */}
+        <div className="lg:col-span-4 flex flex-col gap-8">
+          {isAdmin ? (
+            <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-100 border border-gray-100 p-6 flex-1 flex flex-col relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
+                </h3>
+                <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">
+                  {stats.pendingApprovalsList.length} طلب
+                </span>
+              </div>
+              
+              <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar flex-1">
+                {stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.slice(0, 10).map(log => {
+                  const emp = employees.find(e => e.id === log.employeeId);
+                  return (
+                    <div key={log.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-200 group hover:border-indigo-200 hover:bg-white transition-all duration-300">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
+                          <p className="text-[10px] text-gray-500 line-clamp-1">{log.description}</p>
+                        </div>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                          {log.taskType === 'Daily' ? 'روتين' : 'إضافي'}
+                        </span>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => onApproveLog?.(log.id)} className="flex-1 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm">اعتماد</button>
+                        <button onClick={() => onRejectLog?.(log.id, 'رفض سريع')} className="px-3 py-1.5 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"><X size={14}/></button>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
+                    <CheckCircle2 size={48} className="mb-2" />
+                    <p className="text-sm font-bold">لا توجد سجلات معلقة</p>
+                  </div>
+                )}
+              </div>
+              
+              <button onClick={() => {/* Navigate to full report */}} className="mt-4 w-full py-3 text-xs font-bold text-gray-500 hover:text-indigo-600 bg-gray-50 hover:bg-indigo-50 rounded-xl transition-all">
+                انتقال لتقرير المراجعة الكامل <ChevronRight size={14} className="inline mr-1" />
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[450px]">
+              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12">
+                 <Target size={180} />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 mb-8">إنجازك اليوم</h3>
+              <div className="relative w-48 h-48 mb-10 scale-110">
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" className="text-gray-100" />
+                  <circle 
+                    cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" 
+                    strokeDasharray={540.35}
+                    strokeDashoffset={540.35 - (540.35 * stats.todayProgress) / 100}
+                    strokeLinecap="round"
+                    className="text-indigo-600 transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl font-black text-gray-900">{stats.todayProgress}%</span>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">المعدل الحالي</span>
+                </div>
+              </div>
+              <p className="text-sm text-gray-500 mb-8 font-medium">أكمل روتينك اليومي للحفاظ على سلسلة التميز</p>
+              <button onClick={onStartLogging} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
+                سجل مهامك الآن <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Performance Trends (Common) */}
+        <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col">
+          <div className="flex justify-between items-center mb-10">
+            <div>
+              <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3">
+                <BarChart3 className="text-indigo-600" size={24} />
+                {isAdmin ? 'تحليل تدفق العمليات' : 'إحصائيات التزامك الأسبوعي'}
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">تتبع كفاءة إنجاز المهام على مدار 7 أيام مضت</p>
+            </div>
+            
+            <div className="flex gap-4 p-1.5 bg-gray-50 rounded-xl">
+               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg shadow-sm">
+                  <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span>
+                  <span className="text-[10px] font-black text-gray-700">المنجز</span>
+               </div>
+               <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <span className="w-2.5 h-2.5 bg-gray-200 rounded-full"></span>
+                  <span className="text-[10px] font-black text-gray-500">المسجل</span>
+               </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex items-end justify-between gap-6 px-4 mb-4">
+            {stats.chartData.map((day, idx) => {
+              const maxVal = Math.max(...stats.chartData.map(d => d.total), 1);
+              const heightTotal = (day.total / maxVal) * 100;
+              const heightComp = day.total > 0 ? (day.completed / day.total) * 100 : 0;
+              
+              return (
+                <div key={idx} className="flex-1 flex flex-col items-center gap-4 group cursor-default">
+                  <div className="w-full max-w-[50px] h-64 flex items-end justify-center relative">
+                    <div className="w-full bg-gray-100 rounded-t-2xl absolute bottom-0 transition-all duration-300 group-hover:bg-gray-200" style={{ height: `${heightTotal}%` }}></div>
+                    <div className="w-full bg-indigo-600 rounded-t-2xl absolute bottom-0 transition-all duration-500 group-hover:bg-indigo-700 shadow-lg shadow-indigo-100" style={{ height: `${(heightComp / 100) * heightTotal}%` }}>
+                      <div className="opacity-0 group-hover:opacity-100 absolute -top-12 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xl z-20 transition-all duration-300 scale-90 group-hover:scale-100">
+                        {day.completed} سجل منجز
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black text-gray-400 group-hover:text-gray-900 transition-colors uppercase tracking-tighter">{day.dayName}</span>
+                </div>
+              );
+            })}
+          </div>
+          
+          {isAdmin && (
+            <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-between">
+              <div className="flex gap-10">
+                <div>
+                   <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">المهام الروتينية اليوم</span>
+                   <span className="text-xl font-black text-gray-900">{stats.workloadData.routine}</span>
+                </div>
+                <div>
+                   <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">المهام الإضافية اليوم</span>
+                   <span className="text-xl font-black text-indigo-600">{stats.workloadData.extra}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-bold text-gray-400 block mb-1">حالة الأنظمة</span>
+                <span className="flex items-center gap-1.5 text-xs font-black text-emerald-600">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div> نظام Firestore نشط
+                </span>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Admin Approval Queue */}
-      {isAdmin && stats.pendingApprovalsList.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 shadow-sm mb-8">
-              <h3 className="text-lg font-bold text-amber-800 flex items-center gap-2 mb-4">
-                  <AlertCircle size={20} />
-                  طلبات معلقة وتحتاج اعتماد ({stats.pendingApprovalsList.length})
-              </h3>
-              <div className="bg-white rounded-xl border border-amber-100 divide-y divide-gray-50">
-                  {stats.pendingApprovalsList.map(log => (
-                      <div key={log.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-amber-50/30 transition-colors">
-                          <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${log.taskId === 'LEAVE' ? 'bg-orange-100 text-orange-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                                 {log.empName?.charAt(0) || 'م'}
-                              </div>
-                              <div>
-                                <p className="font-bold text-gray-900">{log.empName}</p>
-                                <p className="text-sm text-gray-600 flex items-center gap-2">
-                                  {log.taskId === 'LEAVE' ? <CalendarCheck size={14} className="text-orange-500" /> : <Briefcase size={14} className="text-gray-400" />}
-                                  {log.description}
-                                </p>
-                              </div>
-                          </div>
-                          {rejectId === log.id ? (
-                              <div className="flex items-center gap-2 bg-red-50 p-2 rounded-lg border border-red-100 animate-fade-in">
-                                  <input type="text" placeholder="سبب الرفض..." className="border border-red-200 rounded px-3 py-1.5 text-sm outline-none w-48" autoFocus value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
-                                  <button onClick={confirmReject} className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm">تأكيد الرفض</button>
-                                  <button onClick={() => setRejectId(null)} className="text-gray-400 hover:text-gray-600"><X size={18}/></button>
-                              </div>
-                          ) : (
-                              <div className="flex gap-2">
-                                  <button onClick={() => onApproveLog && onApproveLog(log.id)} className="flex items-center gap-1.5 bg-green-600 text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-green-700 shadow-sm"><Check size={16} /> اعتماد</button>
-                                  <button onClick={() => handleRejectClick(log.id)} className="flex items-center gap-1.5 bg-white border border-red-200 text-red-600 px-5 py-2 rounded-lg text-xs font-bold hover:bg-red-50 transition-all"><X size={16} /> رفض</button>
-                              </div>
-                          )}
-                      </div>
-                  ))}
+      {/* Strategic Advisor (AI Insights) */}
+      {isAdmin && (
+        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-indigo-500/20 group">
+           <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity duration-1000">
+              <Sparkles size={200} />
+           </div>
+           
+           <div className="relative z-10">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
+                 <div className="flex items-center gap-5">
+                    <div className="w-16 h-16 bg-white/10 backdrop-blur-2xl rounded-[1.5rem] flex items-center justify-center border border-white/20 shadow-inner">
+                      <Sparkles size={32} className="text-amber-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-white">المستشار الاستراتيجي الذكي</h3>
+                      <p className="text-indigo-300 text-sm mt-1">تحليل الأداء بواسطة Gemini AI لتحسين كفاءة العمل</p>
+                    </div>
+                 </div>
+                 <button 
+                  onClick={generateNewInsights} 
+                  disabled={loadingInsights}
+                  className="flex items-center gap-3 px-8 py-3.5 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-2xl shadow-white/5 active:scale-95 disabled:opacity-50"
+                 >
+                    {loadingInsights ? <Loader2 size={20} className="animate-spin"/> : <RefreshCw size={20} />}
+                    توليد تحليل جديد
+                 </button>
               </div>
-          </div>
+
+              {loadingInsights ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-6 text-indigo-200">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full"></div>
+                    <Loader2 className="animate-spin relative" size={64} strokeWidth={3} />
+                  </div>
+                  <p className="font-bold text-xl tracking-wide animate-pulse">جاري تشريح البيانات واستنباط التوصيات الاستراتيجية...</p>
+                </div>
+              ) : insights ? (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
+                   <div className="xl:col-span-7 space-y-8">
+                      <div className="bg-white/5 backdrop-blur-md p-10 rounded-[2.5rem] border border-white/10 shadow-2xl">
+                         <h4 className="text-amber-400 font-black mb-6 text-xs uppercase tracking-[0.3em] flex items-center gap-2">
+                           <ShieldCheck size={18} /> رؤية الأداء العام
+                         </h4>
+                         <p className="text-indigo-50 leading-relaxed text-xl font-medium">{insights.summary}</p>
+                         
+                         <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-2 gap-8">
+                            <div>
+                               <span className="text-[10px] text-indigo-400 font-black uppercase block mb-2 tracking-widest">مؤشر الإنتاجية</span>
+                               <div className="flex items-center gap-3">
+                                  <span className="text-5xl font-black">{insights.productivityScore}%</span>
+                                  <TrendingUp className="text-emerald-400" size={24} />
+                               </div>
+                            </div>
+                            <div>
+                               <span className="text-[10px] text-indigo-400 font-black uppercase block mb-2 tracking-widest">تحديات مرصودة</span>
+                               <div className="flex flex-wrap gap-2">
+                                  {insights.bottlenecks.map((b, i) => (
+                                    <span key={i} className="bg-red-500/10 text-red-200 border border-red-500/20 px-3 py-1.5 rounded-xl text-xs font-bold">{b}</span>
+                                  ))}
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                   
+                   <div className="xl:col-span-5 bg-white/5 backdrop-blur-sm rounded-[2.5rem] p-8 border border-white/10">
+                      <h4 className="text-indigo-200 font-black mb-8 flex items-center gap-2 text-sm uppercase tracking-widest">
+                        <Zap size={20} className="text-amber-400" /> مهام مقترح أتمتتها أو ترحيلها
+                      </h4>
+                      <div className="space-y-4 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar">
+                        {insights.suggestedRoutineTasks.map((task, i) => (
+                          <div key={i} className="group bg-indigo-500/10 p-6 rounded-[1.5rem] border border-indigo-400/10 hover:border-indigo-400/40 hover:bg-indigo-500/20 transition-all duration-300">
+                             <p className="font-black text-white text-lg mb-3 group-hover:text-amber-300 transition-colors">{task.description}</p>
+                             <div className="flex gap-3">
+                                <MessageSquare size={16} className="text-indigo-400 shrink-0 mt-1" />
+                                <p className="text-indigo-300/80 text-xs italic leading-relaxed">{task.reason}</p>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                   </div>
+                </div>
+              ) : (
+                <div className="text-center py-24 bg-white/5 rounded-[3rem] border-2 border-dashed border-white/10">
+                   <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <LayoutGrid size={32} className="text-indigo-400" />
+                   </div>
+                   <p className="text-indigo-200 font-bold mb-8 text-lg">بانتظار البيانات لتوليد الرؤى الاستراتيجية للفريق</p>
+                   <button onClick={generateNewInsights} className="px-10 py-4 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-xl">تحليل السجلات الآن</button>
+                </div>
+              )}
+           </div>
+        </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center relative overflow-hidden group">
-          <div className="absolute top-0 inset-x-0 h-1 bg-indigo-500"></div>
-          <p className="text-gray-400 text-xs font-bold mb-2 uppercase tracking-wider">مؤشر الإنجاز المعتمد</p>
-          <div className="flex items-center justify-center gap-3">
-             <h3 className="text-5xl font-black text-gray-900">{stats.rate}%</h3>
-             <Activity className="text-indigo-100 group-hover:text-indigo-200 transition-colors" size={48} />
-          </div>
-          <p className="text-[10px] text-gray-400 mt-2 font-bold">بناءً على التقارير المعتمدة لـ {timeRange === 'today' ? 'اليوم' : timeRange === 'week' ? 'آخر 7 أيام' : 'آخر 30 يوماً'}</p>
-        </div>
-        
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-           <div>
-              <p className="text-gray-400 text-xs font-bold mb-1">المهام المنجزة</p>
-              <h3 className="text-3xl font-bold text-gray-900">{stats.completed}</h3>
-              <p className="text-[10px] text-green-600 font-bold mt-1">من أصل {stats.total} مهمة</p>
-           </div>
-           <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center text-green-600">
-              <CheckCircle2 size={32} />
-           </div>
-        </div>
+      {/* Custom Scrollbar Styles */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+      `}</style>
+    </div>
+  );
+};
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-           <div>
-              <p className="text-gray-400 text-xs font-bold mb-1">تقارير معلقة</p>
-              <h3 className="text-3xl font-bold text-gray-900">{stats.pendingCount}</h3>
-              <p className="text-[10px] text-amber-600 font-bold mt-1">بانتظار مراجعة الإدارة</p>
-           </div>
-           <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
-              <Clock size={32} />
-           </div>
-        </div>
-      </div>
+// --- Helper Components ---
 
-      {/* Chart and Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-           <div className="flex justify-between items-center mb-10">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3">
-                <BarChart3 className="text-indigo-600" size={24} />
-                تطور الأداء
-              </h3>
-              <div className="flex gap-4 text-[10px] font-bold">
-                 <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-indigo-500 rounded-sm"></span> منجزة</div>
-                 <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-gray-100 rounded-sm"></span> إجمالي</div>
-              </div>
-           </div>
-           <div className="h-64 flex items-end justify-between gap-2 px-2">
-              {stats.chartData.map((day, idx) => {
-                 const maxVal = Math.max(...stats.chartData.map(d => d.total), 1);
-                 const h = (day.count / maxVal) * 100;
-                 return (
-                   <div key={idx} className="flex flex-col items-center gap-2 flex-1 group h-full justify-end">
-                      <div className="relative w-full max-w-[28px] bg-gray-50 rounded-t-lg h-full flex items-end overflow-hidden border-x border-t border-gray-100/50">
-                          <div className="w-full bg-indigo-500 group-hover:bg-indigo-600 transition-all rounded-t-md shadow-sm" style={{ height: `${Math.max(h, 0)}%` }}></div>
-                      </div>
-                      <span className="text-[10px] text-gray-400 font-bold whitespace-nowrap">{day.label}</span>
-                   </div>
-                 )
-              })}
-           </div>
+const StatCard = ({ label, value, subLabel, icon, color }: { label: string, value: string | number, subLabel: string, icon: React.ReactNode, color: string }) => {
+  const colors: Record<string, string> = {
+    amber: 'bg-amber-50 text-amber-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    blue: 'bg-blue-50 text-blue-600'
+  };
+
+  const borderColors: Record<string, string> = {
+    amber: 'border-amber-100',
+    indigo: 'border-indigo-100',
+    emerald: 'border-emerald-100',
+    blue: 'border-blue-100'
+  };
+
+  return (
+    <div className={`bg-white p-7 rounded-[2rem] shadow-sm border ${borderColors[color]} group hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden`}>
+      <div className={`absolute top-0 right-0 w-1.5 h-full ${color === 'amber' ? 'bg-amber-500' : color === 'indigo' ? 'bg-indigo-500' : color === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-gray-400 text-xs font-black mb-2 uppercase tracking-widest">{label}</p>
+          <h3 className="text-4xl font-black text-gray-900 group-hover:text-indigo-600 transition-colors">{value}</h3>
+          <p className="text-[10px] text-gray-500 mt-3 font-bold">{subLabel}</p>
         </div>
-        
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-8 flex items-center gap-3">
-               <Activity className="text-indigo-600" size={24} /> 
-               أحدث الاعتمادات
-            </h3>
-            <div className="space-y-6 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar">
-                {stats.recentActivity.length > 0 ? stats.recentActivity.map((log) => (
-                    <div key={log.id} className="flex gap-4 items-start relative pb-6 border-r-2 border-gray-100 pr-4 last:border-r-0">
-                         <div className={`absolute -right-1.5 top-0 w-3 h-3 rounded-full border-2 border-white shadow-sm ${log.status === 'Completed' || log.status === 'منفذة' ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-                         <div className="flex-1 min-w-0">
-                             {isAdmin && <p className="text-xs font-black text-indigo-700 mb-0.5">{log.empName}</p>}
-                             <p className="text-sm text-gray-800 font-bold leading-tight line-clamp-2">{log.description}</p>
-                             <div className="flex items-center gap-2 mt-2">
-                                <span className="text-[10px] font-bold text-gray-400 px-1.5 py-0.5 bg-gray-50 rounded">{new Date(log.logDate).toLocaleDateString('ar-EG')}</span>
-                                {log.taskId === 'LEAVE' && <span className="text-[10px] font-bold text-orange-600 px-1.5 py-0.5 bg-orange-50 rounded">إجازة</span>}
-                             </div>
-                         </div>
-                    </div>
-                )) : (
-                  <div className="text-center py-20 flex flex-col items-center gap-4 text-gray-300">
-                     <AlertCircle size={48} strokeWidth={1} />
-                     <p className="text-sm font-bold">لا يوجد نشاط معتمد مؤخراً</p>
-                  </div>
-                )}
-            </div>
+        <div className={`p-4 rounded-2xl ${colors[color]} group-hover:scale-110 transition-transform shadow-inner`}>
+          {React.cloneElement(icon as React.ReactElement, { size: 24 })}
         </div>
       </div>
     </div>
   );
 };
+
+const PlusIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+);
 
 export default TaskDashboard;

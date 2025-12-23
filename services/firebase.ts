@@ -2,27 +2,27 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// إعدادات Firebase الخاصة بمشروع marwan2026
+// تم استخراج هذه الإعدادات من الصورة التي أرسلتها
 const firebaseConfig = {
-  apiKey: "AIzaSyAzNAWN9uwhKl0zoQK9eD15fMXNnvgvwhk",
-  authDomain: "marwan2026.firebaseapp.com",
-  projectId: "marwan2026",
-  storageBucket: "marwan2026.firebasestorage.app",
-  messagingSenderId: "217607910806",
-  appId: "1:217607910806:web:10f0db763affcb8170d9b7",
-  measurementId: "G-B2935HWXVG"
+  apiKey: "AIzaSyDyR2S9nr9lO1s3EiQEcBhZHr37U2twldE",
+  authDomain: "taskease-11eb8.firebaseapp.com",
+  projectId: "taskease-11eb8",
+  storageBucket: "taskease-11eb8.firebasestorage.app",
+  messagingSenderId: "984875735484",
+  appId: "1:984875735484:web:bc6f8db82c684ad988b3b9",
+  measurementId: "G-D5WJSWK5LS"
 };
 
-// تهيئة التطبيق وقاعدة البيانات
+// تهيئة التطبيق
 let app;
 let dbInstance;
 
 try {
     app = initializeApp(firebaseConfig);
     dbInstance = getFirestore(app);
-    console.log("تم تهيئة Firebase بنجاح لمشروع marwan2026");
+    console.log("Firebase initialized successfully");
 } catch (error) {
-    console.error("فشل تهيئة Firebase:", error);
+    console.error("Firebase initialization failed:", error);
 }
 
 export const firestore = dbInstance;

@@ -1,93 +1,139 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { TaskAnalysis, NAAnalysisResult } from '../types';
+import { TaskLog, TeamInsight, Employee, TaskAnalysis } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+/**
+ * Fetches strategic insights about team performance based on task logs.
+ */
+export const getTeamPerformanceInsights = async (
+  logs: TaskLog[],
+  employees: Employee[]
+): Promise<TeamInsight> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Defining schemas as objects to follow guidelines and avoid deprecated SchemaType/Schema imports
-const analysisSchema = {
-  type: Type.OBJECT,
-  properties: {
-    summary: { type: Type.STRING },
-    complexityScore: { type: Type.INTEGER },
-    estimatedTimeSaved: { type: Type.STRING },
-    recommendation: { type: Type.STRING },
-    steps: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          description: { type: Type.STRING },
-          codeSnippet: { type: Type.STRING },
-          tool: { type: Type.STRING },
-        },
-        required: ["title", "description", "tool"],
-      },
-    },
-  },
-  required: ["summary", "complexityScore", "estimatedTimeSaved", "recommendation", "steps"],
+  const logsSummary = logs.map(l => ({
+    emp: employees.find(e => e.id === l.employeeId)?.name || l.employeeId,
+    type: l.taskType,
+    desc: l.description,
+    status: l.status
+  }));
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [{
+        role: 'user',
+        parts: [{
+          text: `حلل سجلات المهام التالية لفريق العمل وقدم تقريراً استراتيجياً:
+          ${JSON.stringify(logsSummary.slice(0, 50))}
+          
+          المطلوب:
+          1. ملخص عام للأداء.
+          2. تحديد أي عقبات أو تأخيرات.
+          3. والأهم: ابحث في "المهام الإضافية" (Extra) المتكررة واقترح ترحيلها لتصبح "مهام روتينية ثابتة" إذا كانت تبدو أساسية ومهمة للعمل.
+          
+          اجعل الرد باللغة العربية وفي صيغة JSON فقط.`
+        }]
+      }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            productivityScore: { type: Type.INTEGER },
+            bottlenecks: { type: Type.ARRAY, items: { type: Type.STRING } },
+            suggestedRoutineTasks: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  description: { type: Type.STRING },
+                  reason: { type: Type.STRING }
+                }
+              }
+            }
+          },
+          required: ["summary", "productivityScore", "bottlenecks", "suggestedRoutineTasks"]
+        }
+      }
+    });
+
+    const text = response.text; // Use .text property
+    return JSON.parse(text || '{}') as TeamInsight;
+  } catch (error) {
+    console.error("Gemini Insight Error:", error);
+    throw error;
+  }
 };
 
-const naAnalysisSchema = {
-  type: Type.OBJECT,
-  properties: {
-    reason: { type: Type.STRING, description: "السبب المحتمل لعدم انطباق المهمة بشكل متكرر بالعربية" },
-    suggestion: { type: Type.STRING, description: "اقتراح لتحسين المهمة أو استبدالها بالعربية" },
-    alternativeTasks: { 
-      type: Type.ARRAY, 
-      items: { type: Type.STRING },
-      description: "قائمة بمهام بديلة أكثر فاعلية"
-    }
-  },
-  required: ["reason", "suggestion", "alternativeTasks"]
-};
-
+/**
+ * Analyzes a specific manual task and suggests automation steps or smart workflows.
+ */
 export const analyzeTaskWithGemini = async (
   title: string,
   description: string,
   frequency: string,
   attachment?: { base64: string; mimeType: string }
 ): Promise<TaskAnalysis> => {
-  try {
-    let prompt = `تحليل مهمة روتينية: ${title}. الوصف: ${description}. التكرار: ${frequency}. اقترح خطة أتمتة بالعربية.`;
-    const parts: any[] = [{ text: prompt }];
-    if (attachment) {
-      parts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.base64 } });
-    }
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { parts: parts },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: analysisSchema,
-        systemInstruction: "أنت خبير في الإنتاجية والأتمتة. ساعد الموظف في التخلص من المهام الروتينية.",
-      },
-    });
-    // response.text is a property, handled correctly here.
-    return JSON.parse(response.text || '{}') as TaskAnalysis;
-  } catch (error) {
-    console.error("Error analyzing task:", error);
-    throw error;
-  }
-};
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const textPart = {
+    text: `حلل المهمة اليدوية التالية واقترح خطة تقنية لأتمتتها أو تحويلها لعملية ذكية:
+    اسم المهمة: ${title}
+    الوصف الحالي: ${description}
+    تكرار المهمة: ${frequency}
+    
+    المطلوب:
+    1. ملخص (summary) لرؤية الأتمتة المقترحة.
+    2. قائمة بالخطوات (steps) تتضمن (عنوان الخطوة، الوصف التقني، الأداة المقترحة، ومقتطف برمجي أو قالب إن أمكن).
+    
+    اجعل الرد باللغة العربية وفي صيغة JSON.`
+  };
 
-export const analyzeNATasks = async (tasksList: string[]): Promise<NAAnalysisResult> => {
+  const parts: any[] = [textPart];
+  if (attachment) {
+    parts.push({
+      inlineData: {
+        data: attachment.base64,
+        mimeType: attachment.mimeType
+      }
+    });
+  }
+
   try {
-    const prompt = `هذه المهام يتم تعليمها كـ "لا تنطبق" بشكل متكرر: ${tasksList.join(', ')}. حلل لماذا قد لا تنطبق واقترح بدائل أو تحديثات لهذه المهام لتكون أكثر نفعاً للمؤسسة.`;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: prompt,
+      contents: { parts },
       config: {
         responseMimeType: "application/json",
-        responseSchema: naAnalysisSchema,
-        systemInstruction: "أنت مستشار إداري ذكي. حلل المهام غير المفيدة واقترح تحسينات بالعربية.",
-      },
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            steps: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  tool: { type: Type.STRING },
+                  codeSnippet: { type: Type.STRING }
+                },
+                required: ["title", "description"]
+              }
+            }
+          },
+          required: ["summary", "steps"]
+        }
+      }
     });
-    // Using .text property to extract content
-    return JSON.parse(response.text || '{}') as NAAnalysisResult;
+
+    const text = response.text; // Use .text property
+    return JSON.parse(text || '{}') as TaskAnalysis;
   } catch (error) {
-    console.error("Error analyzing NA tasks:", error);
+    console.error("Gemini Automation Analysis Error:", error);
     throw error;
   }
 };
