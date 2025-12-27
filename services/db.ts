@@ -1,5 +1,5 @@
 
-import { Employee, Task, Assignment, TaskLog, SystemAuditLog, TeamInsight } from '../types';
+import { Employee, Task, Assignment, TaskLog, SystemAuditLog, TeamInsight, Announcement } from '../types';
 import { firestore } from './firebase';
 import { 
   collection, 
@@ -19,7 +19,8 @@ const COLLECTIONS = {
   ASSIGNMENTS: 'assignments',
   LOGS: 'logs',
   SYSTEM_LOGS: 'system_logs',
-  INSIGHTS: 'insights'
+  INSIGHTS: 'insights',
+  ANNOUNCEMENTS: 'announcements'
 };
 
 // --- محول التخزين المحلي ---
@@ -43,16 +44,11 @@ const handleDbError = (error: any) => {
 
 const isCloudEnabled = () => firestore !== null && !cloudBlocked;
 
-/**
- * دالة لتوليد معرف فريد يمنع التكرار للمهمة الواحدة في نفس اليوم
- */
 const generateDeterministicLogId = (log: TaskLog) => {
     const dateOnly = log.logDate.split('T')[0];
     if (log.taskType === 'Daily' && log.taskId !== 'LEAVE' && log.taskId !== 'EXTRA') {
-        // للمهام الروتينية الحقيقية: المعرف هو (الموظف_المهمة_التاريخ)
         return `LOG_${log.employeeId}_${log.taskId}_${dateOnly}`;
     } else {
-        // للمهام الإضافية أو الإجازات أو المعرفات المخصصة: نستخدم المعرف الموجود أو نولد واحد شبه فريد بالثواني
         return log.id && !log.id.includes('LOG-') ? log.id : `${log.taskId || 'EXTRA'}_${log.employeeId}_${log.logDate.replace(/[:.-]/g, '_')}`;
     }
 };
@@ -114,6 +110,37 @@ export const db = {
         snapshot.docs.forEach((d) => batch.delete(d.ref));
         await batch.commit();
        } catch (e) { handleDbError(e); }
+    }
+  },
+
+  announcements: {
+    list: async (): Promise<Announcement[]> => {
+      if (!isCloudEnabled()) return localDb.get<Announcement>(COLLECTIONS.ANNOUNCEMENTS);
+      try {
+        const q = query(collection(firestore!, COLLECTIONS.ANNOUNCEMENTS), orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => doc.data() as Announcement);
+      } catch (e) { return handleDbError(e); }
+    },
+    add: async (item: Announcement): Promise<void> => {
+      if (!isCloudEnabled()) {
+        const data = localDb.get<Announcement>(COLLECTIONS.ANNOUNCEMENTS);
+        localDb.set(COLLECTIONS.ANNOUNCEMENTS, [item, ...data]);
+        return;
+      }
+      try {
+        await setDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, item.id), item);
+      } catch (e) { handleDbError(e); }
+    },
+    delete: async (id: string): Promise<void> => {
+      if (!isCloudEnabled()) {
+        const data = localDb.get<Announcement>(COLLECTIONS.ANNOUNCEMENTS);
+        localDb.set(COLLECTIONS.ANNOUNCEMENTS, data.filter(a => a.id !== id));
+        return;
+      }
+      try {
+        await deleteDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, id));
+      } catch (e) { handleDbError(e); }
     }
   },
 
@@ -258,7 +285,6 @@ export const db = {
         return item;
       }
       try {
-        // Use setDoc with merge to prevent "No document to update" error
         await setDoc(doc(firestore!, COLLECTIONS.LOGS, item.id), item, { merge: true });
         return item;
       } catch (e) { return handleDbError(e); }
@@ -362,6 +388,7 @@ export const db = {
                 await db.employees.clear();
                 await db.systemLogs.clear();
                 await db.insights.clear();
+                await deleteDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, 'all')); // Simplified
             }
             localDb.clearAll();
             alert("تم تصفير النظام بنجاح.");

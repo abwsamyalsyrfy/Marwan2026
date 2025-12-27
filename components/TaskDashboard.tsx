@@ -1,12 +1,12 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { TaskLog, Employee, TeamInsight, Assignment } from '../types';
+import { TaskLog, Employee, TeamInsight, Assignment, Announcement } from '../types';
 import { 
   BarChart3, CheckCircle2, RefreshCw, 
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -16,6 +16,7 @@ interface TaskDashboardProps {
   logs: TaskLog[]; 
   employees?: Employee[]; 
   assignments?: Assignment[];
+  announcements?: Announcement[];
   onRefresh: () => void;
   onStartLogging: () => void;
   onApproveLog?: (logId: string) => void;
@@ -23,7 +24,7 @@ interface TaskDashboardProps {
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
-  currentUser, logs, employees = [], assignments = [], 
+  currentUser, logs, employees = [], assignments = [], announcements = [],
   onRefresh, onStartLogging, onApproveLog, onRejectLog 
 }) => {
   const isAdmin = currentUser.role === 'Admin';
@@ -131,7 +132,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           .map(l => l.logDate.split('T')[0])
       ).size;
 
-      // حساب المرفوضات والمعلقات
       const myRejectedLogs = myLogs.filter(l => l.approvalStatus === 'Rejected');
       const myPendingLogs = myLogs.filter(l => l.approvalStatus === 'PendingApproval');
 
@@ -156,7 +156,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         completedToday,
         reportingDays,
         chartData,
-        myRejectedLogs: myRejectedLogs.slice(0, 5), // عرض آخر 5 مرفوضات
+        myRejectedLogs: myRejectedLogs.slice(0, 5), 
         myPendingCount: myPendingLogs.length
       };
     }
@@ -194,7 +194,40 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
-      {/* تنبيه المرفوضات للموظف - يظهر في أعلى اللوحة */}
+      {/* التعاميم النشطة */}
+      {announcements && announcements.length > 0 && (
+        <div className="space-y-4">
+           {announcements.slice(0, 2).map(ann => (
+             <div key={ann.id} className={`rounded-2xl p-6 shadow-sm border-r-8 animate-slide-up ${
+               ann.priority === 'Critical' ? 'bg-red-50 border-red-500 text-red-900' : 
+               ann.priority === 'Urgent' ? 'bg-amber-50 border-amber-500 text-amber-900' :
+               'bg-blue-50 border-blue-500 text-blue-900'
+             }`}>
+                <div className="flex items-start gap-4">
+                   <div className={`p-3 rounded-xl shadow-sm ${
+                     ann.priority === 'Critical' ? 'bg-red-600 text-white' : 
+                     ann.priority === 'Urgent' ? 'bg-amber-600 text-white' :
+                     'bg-blue-600 text-white'
+                   }`}>
+                      <Megaphone size={20} />
+                   </div>
+                   <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <h4 className="font-black text-lg">{ann.title}</h4>
+                        <span className="text-[10px] font-bold opacity-60">{new Date(ann.createdAt).toLocaleDateString('ar-EG')}</span>
+                      </div>
+                      <p className="text-sm font-medium leading-relaxed opacity-80">{ann.content}</p>
+                      <div className="mt-3 flex items-center gap-2">
+                         <span className="text-[10px] font-black uppercase tracking-widest bg-white/50 px-2 py-0.5 rounded-lg border border-black/5">صادر عن: {ann.createdBy}</span>
+                         {ann.priority === 'Critical' && <span className="text-[9px] font-black bg-red-600 text-white px-2 py-0.5 rounded-lg uppercase animate-pulse">هام جداً</span>}
+                      </div>
+                   </div>
+                </div>
+             </div>
+           ))}
+        </div>
+      )}
+
       {!isAdmin && stats.myRejectedLogs && stats.myRejectedLogs.length > 0 && (
         <div className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm animate-fade-in">
           <div className="flex items-center gap-3 mb-4 text-red-700">
@@ -360,7 +393,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                     </div>
                  </div>
                  <button onClick={generateNewInsights} disabled={loadingInsights} className="flex items-center gap-3 px-8 py-3.5 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-2xl shadow-white/5 active:scale-95 disabled:opacity-50">
-                    {loadingInsights ? <Loader2 size={20} className="animate-spin"/> : <RefreshCw size={20} />} توليد تحليل جديد
+                    {loadingInsights ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />} توليد تحليل جديد
                  </button>
               </div>
               {loadingInsights ? (
@@ -426,6 +459,11 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slide-up 0.5s ease-out forwards; }
       `}</style>
     </div>
   );

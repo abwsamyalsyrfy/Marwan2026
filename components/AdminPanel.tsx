@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
-import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from '../types';
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download } from 'lucide-react';
+import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS, Announcement } from '../types';
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -11,6 +11,9 @@ interface AdminPanelProps {
   assignments: Assignment[];
   logs: TaskLog[];
   systemLogs?: SystemAuditLog[];
+  announcements?: Announcement[];
+  onAddAnnouncement: (announce: Announcement) => void;
+  onDeleteAnnouncement: (id: string) => void;
   onImport: (data: any[], type: 'employees' | 'tasks' | 'logs' | 'assignments') => void;
   onAddAssignment: (empId: string, taskId: string) => void;
   onDeleteAssignment: (assignmentId: string) => void;
@@ -28,24 +31,27 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  employees, tasks, assignments, logs, systemLogs = [], 
+  employees, tasks, assignments, logs, systemLogs = [], announcements = [],
+  onAddAnnouncement, onDeleteAnnouncement,
   onImport, onAddAssignment, onDeleteAssignment,
   onAddEmployee, onUpdateEmployee, onDeleteEmployee, 
   onAddTask, onUpdateTask, onDeleteTask, 
   onUpdateLog, onDeleteLog, onClearData,
   onApproveLog, onRejectLog
 }) => {
-  const [activeTab, setActiveTab] = useState<'employees' | 'tasks' | 'assignments' | 'task_logs' | 'system_logs' | 'import' | 'settings'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'tasks' | 'assignments' | 'task_logs' | 'announcements' | 'system_logs' | 'import' | 'settings'>('employees');
   const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [empRoleFilter, setEmpRoleFilter] = useState<'All' | 'Admin' | 'User'>('All');
-  const [selectedEmp, setSelectedEmp] = useState('');
-  const [selectedTask, setSelectedTask] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  // Initialize dates safely
   const [logStartDate, setLogStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]); 
   const [logEndDate, setLogEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [importType, setImportType] = useState<'employees' | 'tasks' | 'assignments' | 'logs'>('employees');
   const [showAllDates, setShowAllDates] = useState(false);
+
+  // Announcement Form State
+  const [annTitle, setAnnTitle] = useState('');
+  const [annContent, setAnnContent] = useState('');
+  const [annPriority, setAnnPriority] = useState<'Normal' | 'Urgent' | 'Critical'>('Normal');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,7 +62,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Filtering (Protected against undefined) ---
   const filteredEmployees = employees.filter(e => {
     const name = e.name || '';
     const id = e.id || '';
@@ -81,18 +86,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     const desc = l.description || '';
     const empId = l.employeeId || '';
     const empName = employees.find(e => e.id === l.employeeId)?.name || '';
-    
-    // Search matching
     const matchesSearch = desc.includes(searchTerm) || empId.includes(searchTerm) || empName.includes(searchTerm);
-    
-    // Date matching (Robust)
     let matchesDate = true;
     if (!showAllDates) {
         try {
-            // Normalize log date to YYYY-MM-DD for comparison
             const logDateObj = new Date(l.logDate);
             if (isNaN(logDateObj.getTime())) {
-                matchesDate = false; // Invalid date in log
+                matchesDate = false;
             } else {
                 const logDateStr = logDateObj.toISOString().split('T')[0];
                 matchesDate = logDateStr >= logStartDate && logDateStr <= logEndDate;
@@ -101,7 +101,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             matchesDate = false;
         }
     }
-
     return matchesSearch && matchesDate;
   }).sort((a,b) => new Date(b.logDate || 0).getTime() - new Date(a.logDate || 0).getTime());
 
@@ -109,13 +108,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       const actor = l.actorName || '';
       const details = l.details || '';
       const action = l.actionType || '';
-      const timestamp = l.timestamp || '';
-      
       const matchesSearch = actor.includes(searchTerm) || details.includes(searchTerm) || action.includes(searchTerm);
       return matchesSearch; 
   }).sort((a,b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
 
-  // --- Actions ---
+  const handleCreateAnnouncement = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!annTitle || !annContent) return;
+    const newAnn: Announcement = {
+      id: `ANN-${Date.now()}`,
+      title: annTitle,
+      content: annContent,
+      priority: annPriority,
+      createdAt: new Date().toISOString(),
+      createdBy: 'مدير النظام'
+    };
+    onAddAnnouncement(newAnn);
+    setAnnTitle('');
+    setAnnContent('');
+    setAnnPriority('Normal');
+    alert('تم نشر التعميم بنجاح.');
+  };
+
   const handleBulkApprove = () => {
       const unapproved = filteredTaskLogs.filter(l => l.approvalStatus === 'PendingApproval');
       if (unapproved.length === 0) return;
@@ -131,7 +145,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       }
   };
 
-  // --- Backup Functions ---
   const handleExportBackup = () => {
       const backupData = {
           employees,
@@ -141,7 +154,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           exportDate: new Date().toISOString(),
           version: '2.1.0'
       };
-      
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -156,17 +168,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       const reader = new FileReader();
       reader.onload = (evt) => {
           try {
               const content = evt.target?.result as string;
               const backup = JSON.parse(content);
-              
               if (!backup.employees || !backup.tasks) {
                   throw new Error("ملف غير صالح");
               }
-
               if (window.confirm('سيتم دمج البيانات المستوردة مع البيانات الحالية. هل ترغب في المتابعة؟')) {
                   if (backup.employees) onImport(backup.employees, 'employees');
                   if (backup.tasks) onImport(backup.tasks, 'tasks');
@@ -182,7 +191,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (backupInputRef.current) backupInputRef.current.value = '';
   };
 
-  // --- Excel Export (New) ---
   const handleExportExcel = () => {
       const exportData = filteredTaskLogs.map(log => {
           const emp = employees.find(e => e.id === log.employeeId);
@@ -198,20 +206,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               "ملاحظات": log.managerNote || ''
           };
       });
-
       const ws = utils.json_to_sheet(exportData);
       const wb = utils.book_new();
       utils.book_append_sheet(wb, ws, "سجل المهام");
       writeFile(wb, `TaskLogs_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // --- File Import Handler ---
   const processImportedData = (data: any[], type: string) => {
     const getValue = (row: any, key: string) => {
         const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === key.toLowerCase());
         return foundKey ? row[foundKey] : undefined;
     };
-
     return data.map(row => {
         if (type === 'employees') {
             return {
@@ -242,12 +247,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         if (type === 'logs') {
              const rawDate = getValue(row, 'logdate') || getValue(row, 'date');
              let formattedDate = new Date().toISOString();
-             
              if (rawDate) {
                if (rawDate instanceof Date) formattedDate = rawDate.toISOString();
                else formattedDate = String(rawDate);
              }
-
              return {
                  id: String(getValue(row, 'id') || `LOG-${Date.now()}-${Math.random().toString(36).substr(2,9)}`),
                  logDate: formattedDate,
@@ -272,7 +275,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       const reader = new FileReader();
       reader.onload = (evt) => {
           try {
@@ -281,9 +283,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               const wsname = wb.SheetNames[0];
               const ws = wb.Sheets[wsname];
               const rawData = utils.sheet_to_json(ws, { raw: false });
-              
               const processedData = processImportedData(rawData, importType);
-
               if (processedData.length > 0) {
                   onImport(processedData, importType);
                   setImportStatus({ msg: `تم استيراد ${processedData.length} سجل بنجاح في ${importType}`, type: 'success' });
@@ -299,7 +299,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // --- Modal Handling ---
   const openAddModal = (type: 'employee' | 'task' | 'assignment') => {
     setItemType(type);
     setModalMode('add');
@@ -363,9 +362,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             { id: PERMISSIONS.VIEW_REPORTS, label: 'عرض التقارير' },
             { id: PERMISSIONS.MANAGE_SYSTEM, label: 'إدارة النظام' },
         ];
-        
         const isAllSelected = allPermissions.every(p => formData?.permissions?.includes(p.id));
-
         return (
             <>
                 <div className="grid grid-cols-2 gap-4">
@@ -397,35 +394,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </select>
                     </div>
                 </div>
-
                 <div className="mt-4 border-t pt-4">
                     <div className="flex justify-between items-center mb-2">
                         <label className="block text-sm font-bold">صلاحيات الوصول</label>
                         <label className="flex items-center gap-2 text-xs text-indigo-600 font-bold cursor-pointer bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100">
-                            <input 
-                                type="checkbox" 
-                                checked={isAllSelected}
-                                onChange={(e) => toggleAllPermissions(e.target.checked)}
-                                className="rounded text-indigo-600 focus:ring-indigo-500"
-                            />
+                            <input type="checkbox" checked={isAllSelected} onChange={(e) => toggleAllPermissions(e.target.checked)} className="rounded text-indigo-600 focus:ring-indigo-500" />
                             تحديد كل الصلاحيات
                         </label>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         {allPermissions.map(perm => (
                             <label key={perm.id} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
-                                <input 
-                                    type="checkbox" 
-                                    checked={formData?.permissions?.includes(perm.id)} 
-                                    onChange={() => togglePermission(perm.id)}
-                                    className="rounded text-indigo-600" 
-                                />
+                                <input type="checkbox" checked={formData?.permissions?.includes(perm.id)} onChange={() => togglePermission(perm.id)} className="rounded text-indigo-600" />
                                 <span className="text-sm">{perm.label}</span>
                             </label>
                         ))}
                     </div>
                 </div>
-
                 <div className="flex items-center gap-2 mt-4 bg-gray-50 p-2 rounded">
                     <input type="checkbox" checked={formData.active} onChange={e => setFormData({...formData, active: e.target.checked})} />
                     <label className="text-sm font-bold">حساب نشط (يمكنه تسجيل الدخول)</label>
@@ -491,6 +476,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         <button onClick={() => {setActiveTab('tasks'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'tasks' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><ClipboardList size={16}/> المهام</button>
         <button onClick={() => {setActiveTab('assignments'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'assignments' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Link size={16}/> التعيينات</button>
         <button onClick={() => {setActiveTab('task_logs'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'task_logs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><History size={16}/> سجل المهام</button>
+        <button onClick={() => {setActiveTab('announcements'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'announcements' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Megaphone size={16}/> التعاميم</button>
         <button onClick={() => {setActiveTab('system_logs'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'system_logs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Server size={16}/> سجل النظام</button>
         <button onClick={() => {setActiveTab('import'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'import' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Database size={16}/> استيراد</button>
         <button onClick={() => {setActiveTab('settings'); setSearchTerm('');}} className={`px-5 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'settings' ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Settings size={16}/> الإعدادات</button>
@@ -498,6 +484,58 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       <div className="bg-white rounded-b-xl shadow-sm border border-t-0 border-gray-200 overflow-hidden min-h-[500px]">
         
+        {/* === ANNOUNCEMENTS TAB === */}
+        {activeTab === 'announcements' && (
+            <div className="p-8 max-w-5xl mx-auto space-y-10">
+                <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-8 shadow-sm">
+                    <h4 className="text-xl font-black text-indigo-900 mb-6 flex items-center gap-3"><Send size={24}/> نشر تعميم إداري جديد</h4>
+                    <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-indigo-700 mr-1">عنوان التعميم</label>
+                                <input type="text" value={annTitle} onChange={e => setAnnTitle(e.target.value)} placeholder="مثلاً: بخصوص عطلة نهاية الأسبوع" className="w-full p-3 border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" required />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-indigo-700 mr-1">مستوى الأهمية</label>
+                                <select value={annPriority} onChange={(e: any) => setAnnPriority(e.target.value)} className="w-full p-3 border border-indigo-200 rounded-xl outline-none">
+                                    <option value="Normal">عادي</option>
+                                    <option value="Urgent">هام</option>
+                                    <option value="Critical">عاجل جداً</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-indigo-700 mr-1">المحتوى</label>
+                            <textarea value={annContent} onChange={e => setAnnContent(e.target.value)} rows={3} placeholder="اكتب تفاصيل التعميم هنا..." className="w-full p-3 border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-none" required />
+                        </div>
+                        <button type="submit" className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center gap-2 transition-all active:scale-95"><Send size={18}/> إرسال التعميم الآن</button>
+                    </form>
+                </div>
+
+                <div className="space-y-4">
+                    <h4 className="text-lg font-black text-gray-800 border-b pb-4">التعاميم السابقة</h4>
+                    {announcements && announcements.length > 0 ? announcements.map(ann => (
+                        <div key={ann.id} className="p-5 bg-white border border-gray-100 rounded-2xl shadow-sm flex justify-between items-center group hover:border-indigo-200 transition-all">
+                            <div className="flex gap-4 items-start">
+                                <div className={`p-3 rounded-xl ${ann.priority === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}><Megaphone size={20}/></div>
+                                <div>
+                                    <h5 className="font-black text-gray-900">{ann.title}</h5>
+                                    <p className="text-xs text-gray-500 mt-1 line-clamp-1">{ann.content}</p>
+                                    <span className="text-[10px] text-gray-400 font-bold mt-2 inline-block">تاريخ النشر: {new Date(ann.createdAt).toLocaleString('ar-EG')}</span>
+                                </div>
+                            </div>
+                            <button onClick={() => onDeleteAnnouncement(ann.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={20}/></button>
+                        </div>
+                    )) : (
+                        <div className="text-center py-20 opacity-30">
+                            <Megaphone size={64} className="mx-auto mb-4" />
+                            <p className="font-bold">لم يتم نشر أي تعاميم بعد</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
         {/* === EMPLOYEES TAB === */}
         {activeTab === 'employees' && (
             <div className="flex flex-col h-full">
@@ -686,12 +724,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 const logDateVal = log.logDate ? new Date(log.logDate) : new Date();
                                 const isValidDate = !isNaN(logDateVal.getTime());
                                 const displayDate = isValidDate ? logDateVal.toLocaleDateString('ar-EG') : 'تاريخ غير صالح';
-
                                 return (
                                     <tr key={log.id} className={`hover:bg-gray-50 ${log.approvalStatus === 'Rejected' ? 'bg-red-50' : ''}`}>
-                                        <td className="p-4 font-mono text-xs text-gray-500" dir="ltr">
-                                            {displayDate}
-                                        </td>
+                                        <td className="p-4 font-mono text-xs text-gray-500" dir="ltr">{displayDate}</td>
                                         <td className="p-4 font-bold text-gray-700">{empName}</td>
                                         <td className="p-4 text-xs font-bold text-gray-600">
                                             {log.taskType === 'Daily' && 'روتينية'}
@@ -770,43 +805,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                      <h3 className="text-lg font-bold text-blue-900 mb-2 flex items-center gap-2"><Database size={20}/> استيراد البيانات من Excel</h3>
                      <p className="text-blue-700 text-sm">يمكنك استيراد الموظفين، المهام، التعيينات، أو سجلات المهام. يرجى التأكد من مطابقة أسماء الأعمدة (Header) في الملف.</p>
                  </div>
-
                  <div className="flex gap-4 mb-6 justify-center flex-wrap">
                      <button onClick={() => setImportType('employees')} className={`px-4 py-2 rounded-lg border text-sm font-bold ${importType==='employees'?'bg-indigo-600 text-white border-indigo-600':'bg-white text-gray-600 border-gray-300'}`}>الموظفين</button>
                      <button onClick={() => setImportType('tasks')} className={`px-4 py-2 rounded-lg border text-sm font-bold ${importType==='tasks'?'bg-indigo-600 text-white border-indigo-600':'bg-white text-gray-600 border-gray-300'}`}>المهام</button>
                      <button onClick={() => setImportType('assignments')} className={`px-4 py-2 rounded-lg border text-sm font-bold ${importType==='assignments'?'bg-indigo-600 text-white border-indigo-600':'bg-white text-gray-600 border-gray-300'}`}>التعيينات</button>
                      <button onClick={() => setImportType('logs')} className={`px-4 py-2 rounded-lg border text-sm font-bold ${importType==='logs'?'bg-indigo-600 text-white border-indigo-600':'bg-white text-gray-600 border-gray-300'}`}>سجلات المهام</button>
                  </div>
-
                  <div className="border-2 border-dashed border-gray-300 rounded-2xl p-10 text-center hover:bg-gray-50 transition-colors relative">
-                     <input 
-                       type="file" 
-                       ref={fileInputRef}
-                       onChange={handleFileUpload}
-                       accept=".xlsx, .xls, .csv" 
-                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                     />
+                     <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                      <Upload size={48} className="mx-auto text-gray-400 mb-4" />
                      <p className="text-xl font-bold text-gray-700 mb-2">اضغط هنا أو اسحب الملف</p>
                      <p className="text-sm text-gray-500">صيغ مدعومة: XLSX, CSV</p>
                  </div>
-
                  {importStatus && (
                      <div className={`mt-6 p-4 rounded-lg border flex items-center gap-3 ${importStatus.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
                          {importStatus.type === 'success' ? <CheckCircle size={20}/> : <AlertTriangle size={20}/>}
                          {importStatus.msg}
                      </div>
                  )}
-                 
-                 <div className="mt-8">
-                     <h4 className="font-bold text-gray-800 mb-2">الأعمدة المقبولة (بالعربية أو الإنجليزية):</h4>
-                     <div className="bg-gray-100 p-4 rounded-lg font-mono text-xs text-gray-600 overflow-x-auto" dir="ltr">
-                        {importType === 'employees' && "id/empid, name/empname, jobtitle/title, email, role, active"}
-                        {importType === 'tasks' && "id/taskid, description/desc, category"}
-                        {importType === 'assignments' && "employeeid/empid, taskid"}
-                        {importType === 'logs' && "logdate/date, employeeid, taskid, status, description, approvalstatus"}
-                     </div>
-                 </div>
              </div>
         )}
 
@@ -814,94 +830,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         {activeTab === 'settings' && (
              <div className="p-8 max-w-4xl mx-auto">
                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><Settings size={24}/> إعدادات النظام</h3>
-                 
                  <div className="space-y-6">
-                     {/* Backup and Restore Section */}
                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                          <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">النسخ الاحتياطي والاستعادة</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100 flex flex-col items-center justify-center text-center gap-3">
                                  <Download size={32} className="text-indigo-600" />
-                                 <div>
-                                     <p className="font-bold text-indigo-900">تصدير نسخة كاملة</p>
-                                     <p className="text-xs text-indigo-700 mt-1">حفظ كافة الموظفين والمهام والسجلات في ملف JSON واحد.</p>
-                                 </div>
+                                 <p className="font-bold text-indigo-900">تصدير نسخة كاملة</p>
                                  <button onClick={handleExportBackup} className="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors shadow-sm">تصدير الآن</button>
                              </div>
-                             
                              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 flex flex-col items-center justify-center text-center gap-3 relative">
-                                 <input 
-                                     type="file" 
-                                     ref={backupInputRef}
-                                     onChange={handleImportBackup}
-                                     accept=".json" 
-                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                 />
+                                 <input type="file" ref={backupInputRef} onChange={handleImportBackup} accept=".json" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                                  <Upload size={32} className="text-blue-600" />
-                                 <div>
-                                     <p className="font-bold text-blue-900">استيراد نسخة سابقة</p>
-                                     <p className="text-xs text-blue-700 mt-1">رفع ملف النسخة الاحتياطية (.json) لاستعادة البيانات.</p>
-                                 </div>
+                                 <p className="font-bold text-blue-900">استيراد نسخة سابقة</p>
                                  <button className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm">رفع الملف</button>
                              </div>
                          </div>
                      </div>
-
                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                          <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">إدارة البيانات (منطقة الخطر)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-100">
-                                 <div>
-                                     <p className="font-bold text-red-800">حذف سجلات المهام فقط</p>
-                                     <p className="text-xs text-red-600">سيتم حذف جميع سجلات الأداء اليومية.</p>
-                                 </div>
-                                 <button onClick={() => {if(window.confirm('هل أنت متأكد؟')) onClearData('logs')}} className="px-4 py-2 bg-red-600 text-white rounded font-bold text-xs hover:bg-red-700">تنفيذ</button>
-                             </div>
-                             <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-100">
-                                 <div>
-                                     <p className="font-bold text-red-800">تصفير النظام بالكامل</p>
-                                     <p className="text-xs text-red-600">حذف الموظفين، المهام، والسجلات.</p>
-                                 </div>
-                                 <button onClick={() => {if(window.confirm('تحذير نهائي: سيتم مسح كل شيء!')) onClearData('all')}} className="px-4 py-2 bg-red-800 text-white rounded font-bold text-xs hover:bg-red-900">تنفيذ</button>
-                             </div>
-                         </div>
-                     </div>
-
-                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                         <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">معلومات النظام</h4>
-                         <div className="grid grid-cols-2 gap-4 text-sm">
-                             <div className="p-3 bg-gray-50 rounded">
-                                 <span className="text-gray-500 block">الإصدار</span>
-                                 <span className="font-bold">v2.1.0 (Enterprise)</span>
-                             </div>
-                             <div className="p-3 bg-gray-50 rounded">
-                                 <span className="text-gray-500 block">حالة قاعدة البيانات</span>
-                                 <span className="font-bold text-green-600">متصل (Cloud Firestore)</span>
-                             </div>
-                             <div className="p-3 bg-gray-50 rounded">
-                                 <span className="text-gray-500 block">عدد الموظفين</span>
-                                 <span className="font-bold">{employees.length}</span>
-                             </div>
-                             <div className="p-3 bg-gray-50 rounded">
-                                 <span className="text-gray-500 block">عدد المهام المعرفة</span>
-                                 <span className="font-bold">{tasks.length}</span>
-                             </div>
+                             <button onClick={() => {if(window.confirm('هل أنت متأكد؟')) onClearData('logs')}} className="px-4 py-4 bg-red-50 text-red-800 border border-red-200 rounded-xl font-bold text-sm hover:bg-red-100 transition-all">حذف سجلات المهام فقط</button>
+                             <button onClick={() => {if(window.confirm('تحذير نهائي: سيتم مسح كل شيء!')) onClearData('all')}} className="px-4 py-4 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all">تصفير النظام بالكامل</button>
                          </div>
                      </div>
                  </div>
              </div>
         )}
-
       </div>
 
-      {/* Common Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 animate-fade-in">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold text-gray-800">
-                        {modalMode === 'add' ? 'إضافة عنصر جديد' : 'تعديل البيانات'}
-                    </h3>
+                    <h3 className="text-xl font-bold text-gray-800">{modalMode === 'add' ? 'إضافة عنصر جديد' : 'تعديل البيانات'}</h3>
                     <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
                 </div>
                 <form onSubmit={handleModalSubmit}>

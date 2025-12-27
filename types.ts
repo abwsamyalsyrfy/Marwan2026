@@ -38,12 +38,21 @@ export interface TaskLog {
   managerNote?: string;
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  priority: 'Normal' | 'Urgent' | 'Critical';
+  createdBy: string;
+}
+
 export interface SystemAuditLog {
   id: string;
   timestamp: string;
   actorName: string;
   actorId: string;
-  actionType: 'LOGIN' | 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'CLEAR' | 'APPROVE' | 'REJECT'; 
+  actionType: 'LOGIN' | 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'CLEAR' | 'APPROVE' | 'REJECT' | 'ANNOUNCE'; 
   target: string;
   details: string;
 }

@@ -7,7 +7,7 @@ import AdminPanel from './components/AdminPanel';
 import AnalyticsReports from './components/AnalyticsReports';
 import LoginScreen from './components/LoginScreen';
 import UserSettings from './components/UserSettings';
-import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from './types';
+import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS, Announcement } from './types';
 import { Menu, Loader2, WifiOff, ShieldAlert, ExternalLink } from 'lucide-react';
 import { db } from './services/db';
 
@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [logs, setLogs] = useState<TaskLog[]>([]);
   const [systemLogs, setSystemLogs] = useState<SystemAuditLog[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   
   // --- UI State ---
   const [isLoading, setIsLoading] = useState(true);
@@ -32,12 +33,13 @@ const App: React.FC = () => {
     const initData = async () => {
       setIsLoading(true);
       try {
-        const [empData, taskData, assignData, logData, sysLogData] = await Promise.all([
+        const [empData, taskData, assignData, logData, sysLogData, announceData] = await Promise.all([
           db.employees.list(),
           db.tasks.list(),
           db.assignments.list(),
           db.logs.list(),
-          db.systemLogs.list()
+          db.systemLogs.list(),
+          db.announcements.list()
         ]);
         
         setEmployees(empData);
@@ -45,6 +47,7 @@ const App: React.FC = () => {
         setAssignments(assignData);
         setLogs(logData);
         setSystemLogs(sysLogData);
+        setAnnouncements(announceData);
         setIsOfflineMode(false);
         setIsPermissionError(false);
       } catch (error: any) {
@@ -134,6 +137,18 @@ const App: React.FC = () => {
     if (type === 'logs') setLogs(updated as TaskLog[]);
     if (type === 'assignments') setAssignments(updated as Assignment[]);
     recordSystemAction(currentUser, 'IMPORT', type, `استيراد ${data.length} سجل`);
+  };
+
+  const handleAddAnnouncement = async (announce: Announcement) => {
+    await db.announcements.add(announce);
+    setAnnouncements(prev => [announce, ...prev]);
+    recordSystemAction(currentUser, 'ANNOUNCE', 'التعاميم', `نشر تعميم: ${announce.title}`);
+  };
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    await db.announcements.delete(id);
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+    recordSystemAction(currentUser, 'DELETE', 'التعاميم', `حذف تعميم رقم: ${id}`);
   };
 
   const handleClearData = async (type: 'logs' | 'employees' | 'all') => {
@@ -256,6 +271,7 @@ service cloud.firestore {
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)}
         logs={logs}
+        announcementsCount={announcements.length}
       />
       <div className="md:hidden bg-white p-4 shadow-sm flex justify-between items-center print:hidden">
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={24} /></button>
@@ -265,10 +281,10 @@ service cloud.firestore {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         {(isOfflineMode || isPermissionError) && <div className="mb-4 bg-amber-50 p-3 rounded-lg text-amber-800 text-xs font-bold border border-amber-200">وضع العمل المحلي: قد لا يتم حفظ التغييرات على السحابة حالياً.</div>}
         
-        {activeTab === 'dashboard' && <TaskDashboard currentUser={currentUser} logs={logs} employees={employees} onRefresh={() => window.location.reload()} onStartLogging={() => setActiveTab('daily-log')} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
+        {activeTab === 'dashboard' && <TaskDashboard currentUser={currentUser} logs={logs} employees={employees} announcements={announcements} onRefresh={() => window.location.reload()} onStartLogging={() => setActiveTab('daily-log')} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
         {activeTab === 'daily-log' && <DailyLogger currentUser={currentUser} tasks={tasks} assignments={assignments} logs={logs} onSaveLogs={handleSaveLogs} onCancel={() => setActiveTab('dashboard')} />}
         {activeTab === 'reports' && <AnalyticsReports employees={employees} logs={logs} tasks={tasks} assignments={assignments} />}
-        {activeTab === 'admin' && <AdminPanel employees={employees} tasks={tasks} assignments={assignments} logs={logs} systemLogs={systemLogs} onImport={handleImportData} onAddAssignment={handleAddAssignment} onDeleteAssignment={handleDeleteAssignment} onAddEmployee={handleAddEmployee} onUpdateEmployee={handleUpdateEmployee} onDeleteEmployee={handleDeleteEmployee} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onUpdateLog={handleUpdateLog} onDeleteLog={handleDeleteLog} onClearData={handleClearData} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
+        {activeTab === 'admin' && <AdminPanel employees={employees} tasks={tasks} assignments={assignments} logs={logs} systemLogs={systemLogs} announcements={announcements} onAddAnnouncement={handleAddAnnouncement} onDeleteAnnouncement={handleDeleteAnnouncement} onImport={handleImportData} onAddAssignment={handleAddAssignment} onDeleteAssignment={handleDeleteAssignment} onAddEmployee={handleAddEmployee} onUpdateEmployee={handleUpdateEmployee} onDeleteEmployee={handleDeleteEmployee} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onUpdateLog={handleUpdateLog} onDeleteLog={handleDeleteLog} onClearData={handleClearData} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
         {activeTab === 'profile' && <UserSettings currentUser={currentUser} onUpdatePassword={handleUpdatePassword} />}
       </main>
     </div>

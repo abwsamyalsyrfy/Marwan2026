@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { LayoutDashboard, ClipboardCheck, Users, Settings, PieChart, Bell, X, LogOut, Shield, UserCircle, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Users, Settings, PieChart, Bell, X, LogOut, Shield, UserCircle, AlertCircle, Megaphone } from 'lucide-react';
 import { Employee, PERMISSIONS, TaskLog } from '../types';
 
 interface SidebarProps {
@@ -12,18 +12,18 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   logs: TaskLog[];
+  announcementsCount?: number;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   activeTab, setActiveTab, currentUser, onLogout, missingLogsCount,
-  isOpen, onClose, logs
+  isOpen, onClose, logs, announcementsCount = 0
 }) => {
   if (!currentUser) return null;
 
   const isAdmin = currentUser.role === 'Admin';
   const permissions = currentUser.permissions || [];
   
-  // حساب المرفوضات والمعلقات للموظف الحالي
   const userAlerts = useMemo(() => {
     if (isAdmin) return { rejected: 0, pending: 0 };
     const myLogs = logs.filter(l => l.employeeId === currentUser.id);
@@ -86,6 +86,20 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
+        {/* تنبيه التعاميم الإدارية */}
+        {announcementsCount > 0 && (
+          <button 
+            onClick={() => handleItemClick('dashboard')}
+            className="mx-4 mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 transition-transform active:scale-95"
+          >
+            <Megaphone size={18} className="text-blue-600 mt-0.5 shrink-0" />
+            <div className="text-right">
+              <p className="text-xs font-bold text-blue-800">تعاميم جديدة</p>
+              <p className="text-[10px] text-blue-700 mt-1">توجد رسائل إدارية هامة في لوحة التحكم.</p>
+            </div>
+          </button>
+        )}
+
         {/* تنبيه الإدارة للمدير */}
         {isAdmin && missingLogsCount > 0 && (
           <div className="mx-4 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
@@ -125,7 +139,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </span>
                 {item.label}
               </div>
-              {/* إضافة نقطة إشعار حمراء إذا كان التبويب هو اللوحة الرئيسية وهناك مرفوضات */}
               {item.id === 'dashboard' && !isAdmin && userAlerts.rejected > 0 && (
                 <span className="w-2 h-2 bg-red-500 rounded-full"></span>
               )}
