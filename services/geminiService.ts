@@ -19,10 +19,10 @@ export const getTeamPerformanceInsights = async (
   }));
 
   try {
+    // Upgraded to gemini-3-pro-preview for higher quality strategic reasoning.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: [{
-        role: 'user',
+      model: 'gemini-3-pro-preview',
+      contents: {
         parts: [{
           text: `حلل سجلات المهام التالية لفريق العمل وقدم تقريراً استراتيجياً:
           ${JSON.stringify(logsSummary.slice(0, 50))}
@@ -34,7 +34,7 @@ export const getTeamPerformanceInsights = async (
           
           اجعل الرد باللغة العربية وفي صيغة JSON فقط.`
         }]
-      }],
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -59,7 +59,7 @@ export const getTeamPerformanceInsights = async (
       }
     });
 
-    const text = response.text; // Use .text property
+    const text = response.text; // Accessing extracted text property directly.
     return JSON.parse(text || '{}') as TeamInsight;
   } catch (error) {
     console.error("Gemini Insight Error:", error);
@@ -102,8 +102,9 @@ export const analyzeTaskWithGemini = async (
   }
 
   try {
+    // Upgraded to gemini-3-pro-preview for complex coding and automation task reasoning.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: { parts },
       config: {
         responseMimeType: "application/json",
@@ -130,7 +131,7 @@ export const analyzeTaskWithGemini = async (
       }
     });
 
-    const text = response.text; // Use .text property
+    const text = response.text; // Accessing extracted text property directly.
     return JSON.parse(text || '{}') as TaskAnalysis;
   } catch (error) {
     console.error("Gemini Automation Analysis Error:", error);
