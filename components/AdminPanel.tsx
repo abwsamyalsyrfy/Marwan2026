@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from '../types';
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare } from 'lucide-react';
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -54,6 +54,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formData, setFormData] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   // --- Filtering (Protected against undefined) ---
   const filteredEmployees = employees.filter(e => {
@@ -128,6 +129,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (reason !== null) {
          onRejectLog(logId, reason || "رفض من قبل المسؤول");
       }
+  };
+
+  // --- Backup Functions ---
+  const handleExportBackup = () => {
+      const backupData = {
+          employees,
+          tasks,
+          assignments,
+          logs,
+          exportDate: new Date().toISOString(),
+          version: '2.1.0'
+      };
+      
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `TaskEase_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          try {
+              const content = evt.target?.result as string;
+              const backup = JSON.parse(content);
+              
+              if (!backup.employees || !backup.tasks) {
+                  throw new Error("ملف غير صالح");
+              }
+
+              if (window.confirm('سيتم دمج البيانات المستوردة مع البيانات الحالية. هل ترغب في المتابعة؟')) {
+                  if (backup.employees) onImport(backup.employees, 'employees');
+                  if (backup.tasks) onImport(backup.tasks, 'tasks');
+                  if (backup.assignments) onImport(backup.assignments, 'assignments');
+                  if (backup.logs) onImport(backup.logs, 'logs');
+                  alert('تمت استعادة النسخة الاحتياطية بنجاح.');
+              }
+          } catch (err) {
+              alert('فشل استيراد النسخة الاحتياطية. تأكد من صحة الملف.');
+          }
+      };
+      reader.readAsText(file);
+      if (backupInputRef.current) backupInputRef.current.value = '';
   };
 
   // --- Excel Export (New) ---
@@ -764,6 +816,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><Settings size={24}/> إعدادات النظام</h3>
                  
                  <div className="space-y-6">
+                     {/* Backup and Restore Section */}
+                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                         <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">النسخ الاحتياطي والاستعادة</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100 flex flex-col items-center justify-center text-center gap-3">
+                                 <Download size={32} className="text-indigo-600" />
+                                 <div>
+                                     <p className="font-bold text-indigo-900">تصدير نسخة كاملة</p>
+                                     <p className="text-xs text-indigo-700 mt-1">حفظ كافة الموظفين والمهام والسجلات في ملف JSON واحد.</p>
+                                 </div>
+                                 <button onClick={handleExportBackup} className="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors shadow-sm">تصدير الآن</button>
+                             </div>
+                             
+                             <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 flex flex-col items-center justify-center text-center gap-3 relative">
+                                 <input 
+                                     type="file" 
+                                     ref={backupInputRef}
+                                     onChange={handleImportBackup}
+                                     accept=".json" 
+                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                 />
+                                 <Upload size={32} className="text-blue-600" />
+                                 <div>
+                                     <p className="font-bold text-blue-900">استيراد نسخة سابقة</p>
+                                     <p className="text-xs text-blue-700 mt-1">رفع ملف النسخة الاحتياطية (.json) لاستعادة البيانات.</p>
+                                 </div>
+                                 <button className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm">رفع الملف</button>
+                             </div>
+                         </div>
+                     </div>
+
                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                          <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">إدارة البيانات (منطقة الخطر)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -793,7 +876,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              </div>
                              <div className="p-3 bg-gray-50 rounded">
                                  <span className="text-gray-500 block">حالة قاعدة البيانات</span>
-                                 <span className="font-bold text-green-600">متصل (Local State)</span>
+                                 <span className="font-bold text-green-600">متصل (Cloud Firestore)</span>
                              </div>
                              <div className="p-3 bg-gray-50 rounded">
                                  <span className="text-gray-500 block">عدد الموظفين</span>
