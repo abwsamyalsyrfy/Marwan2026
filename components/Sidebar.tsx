@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, ClipboardCheck, Users, Settings, PieChart, Bell, X, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Users, Settings, PieChart, Bell, X, LogOut, Shield, UserCircle } from 'lucide-react';
 import { Employee, PERMISSIONS } from '../types';
 
 interface SidebarProps {
@@ -39,6 +39,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   if (currentUser.role === 'Admin' || permissions.includes(PERMISSIONS.MANAGE_SYSTEM)) {
     menuItems.push({ id: 'admin', label: 'إدارة النظام', icon: <Shield size={20} /> });
   }
+
+  // User Settings Link (Available for all)
+  menuItems.push({ id: 'profile', label: 'إعدادات حسابي', icon: <UserCircle size={20} /> });
 
   const handleItemClick = (id: string) => {
     setActiveTab(id);

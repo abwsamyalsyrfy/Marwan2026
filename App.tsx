@@ -6,6 +6,7 @@ import DailyLogger from './components/DailyLogger';
 import AdminPanel from './components/AdminPanel';
 import AnalyticsReports from './components/AnalyticsReports';
 import LoginScreen from './components/LoginScreen';
+import UserSettings from './components/UserSettings';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from './types';
 import { Menu, Loader2, WifiOff, ShieldAlert, ExternalLink } from 'lucide-react';
 import { db } from './services/db';
@@ -77,7 +78,7 @@ const App: React.FC = () => {
   const handleLogin = (user: Employee) => {
     if (employees.length === 0 && user.id === 'admin') {
          setCurrentUser(user);
-         recordSystemAction(user, 'LOGIN', 'المصادقة', `تم تسجيل الدخول (حساب النظام المؤقت)`);
+         recordSystemAction(user, 'LOGIN', 'المصادقة', `تم تسجيل الدخول (حساب النظام مؤقت)`);
          setActiveTab('admin'); 
          return;
     }
@@ -97,11 +98,24 @@ const App: React.FC = () => {
     setIsSidebarOpen(false);
   };
 
+  const handleUpdatePassword = async (newPassword: string): Promise<boolean> => {
+    if (!currentUser) return false;
+    try {
+      const updatedUser = { ...currentUser, password: newPassword, lastModified: new Date().toISOString() };
+      await db.employees.update(updatedUser);
+      setEmployees(prev => prev.map(e => e.id === currentUser.id ? updatedUser : e));
+      setCurrentUser(updatedUser);
+      recordSystemAction(currentUser, 'UPDATE', 'الملف الشخصي', 'تغيير كلمة المرور');
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
   const handleSaveLogs = async (newLogs: TaskLog[]) => {
     try {
-      // CRITICAL FIX: Get the final logs with deterministic IDs from the database
       const savedLogs = await db.logs.add(newLogs);
-      // Update local state with the actual IDs stored in the cloud
       setLogs(prev => [...savedLogs, ...prev]); 
       alert("تم حفظ التقارير بنجاح.");
       if (currentUser?.permissions.includes(PERMISSIONS.VIEW_DASHBOARD)) {
@@ -113,9 +127,7 @@ const App: React.FC = () => {
   };
 
   const handleImportData = async (data: any[], type: 'employees' | 'tasks' | 'logs' | 'assignments') => {
-    // Process imports similarly to CRUD but using db.import which now handles deterministic IDs for logs
     await db[type].import(data);
-    // Reload full list to ensure state sync
     const updated = await db[type].list();
     if (type === 'employees') setEmployees(updated as Employee[]);
     if (type === 'tasks') setTasks(updated as Task[]);
@@ -248,6 +260,7 @@ service cloud.firestore {
         {activeTab === 'daily-log' && <DailyLogger currentUser={currentUser} tasks={tasks} assignments={assignments} logs={logs} onSaveLogs={handleSaveLogs} onCancel={() => setActiveTab('dashboard')} />}
         {activeTab === 'reports' && <AnalyticsReports employees={employees} logs={logs} tasks={tasks} assignments={assignments} />}
         {activeTab === 'admin' && <AdminPanel employees={employees} tasks={tasks} assignments={assignments} logs={logs} systemLogs={systemLogs} onImport={handleImportData} onAddAssignment={handleAddAssignment} onDeleteAssignment={handleDeleteAssignment} onAddEmployee={handleAddEmployee} onUpdateEmployee={handleUpdateEmployee} onDeleteEmployee={handleDeleteEmployee} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onUpdateLog={handleUpdateLog} onDeleteLog={handleDeleteLog} onClearData={handleClearData} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
+        {activeTab === 'profile' && <UserSettings currentUser={currentUser} onUpdatePassword={handleUpdatePassword} />}
       </main>
     </div>
   );
