@@ -130,6 +130,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const completedToday = myTodayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
       const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : 0;
 
+      // حساب عدد أيام العمل الموثقة (أيام فريدة سجل فيها مهام روتينية فقط)
+      const reportingDays = new Set(
+        myLogs
+          .filter(l => l.taskType === 'Daily' && l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة')
+          .map(l => l.logDate.split('T')[0])
+      ).size;
+
       // 7-Day Trend for Individual
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
@@ -151,6 +158,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         monthRate: calcRate(myMonthLogs),
         progressToday,
         completedToday,
+        reportingDays,
         totalAssigned: myAssignments.length,
         chartData
       };
@@ -208,7 +216,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
             <StatCard label="إنجازك اليوم" value={`${stats.todayRate}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
             <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<Trophy className="text-indigo-600" />} color="indigo" />
             <StatCard label="إنجازك الشهري" value={`${stats.monthRate}%`} subLabel="خلال آخر 30 يوم" icon={<CalendarDays className="text-blue-600" />} color="blue" />
-            <StatCard label="الترتيب الحالي" value="#1" subLabel="بناءً على الالتزام بالوقت" icon={<Award className="text-emerald-600" />} color="emerald" />
+            <StatCard label="أيام العمل الموثقة" value={stats.reportingDays} subLabel="إجمالي أيام تسجيل المهام" icon={<CalendarCheck className="text-emerald-600" />} color="emerald" />
           </>
         )}
       </div>
