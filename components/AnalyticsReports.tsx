@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Employee, TaskLog, Task, Assignment } from '../types';
-import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Target, Award, Clock, Star, Zap, Activity } from 'lucide-react';
+import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Activity, Clock, Star, Zap } from 'lucide-react';
 
 interface AnalyticsReportsProps {
   employees: Employee[];
@@ -67,7 +67,6 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
       .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime());
   }, [filteredLogs, selectedEmpId]);
 
-  // احتساب الإحصائيات مع مراعاة الخميس والجمعة تلقائياً
   const adherenceStats = useMemo(() => {
     let grossDays = 0;
     let presentDaysCount = 0; 
@@ -119,18 +118,22 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         const relevantLogs = empLogs.filter(l => l.taskId === task.id);
         const completed = relevantLogs.filter(l => isCompletedStatus(l.status)).length;
         const pending = relevantLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
-        const rate = adherenceStats.presentDays > 0 ? Math.round((completed / adherenceStats.presentDays) * 100) : 0;
+        const notApplicable = relevantLogs.filter(l => l.status === 'NotApplicable' || l.status === 'لا تنطبق').length;
+        
+        // حساب نسبة الكفاءة بناءً على أيام العمل الفعلية بدلاً من أيام الحضور
+        const rate = adherenceStats.netWorkDays > 0 ? Math.round((completed / adherenceStats.netWorkDays) * 100) : 0;
 
         return { 
           taskId: task.id, 
           desc: task.description, 
           completed, 
           pending, 
+          notApplicable,
           rate,
           category: task.category
         };
     }).sort((a, b) => b.rate - a.rate);
-  }, [empLogs, assignments, tasks, selectedEmpId, adherenceStats.presentDays]);
+  }, [empLogs, assignments, tasks, selectedEmpId, adherenceStats.netWorkDays]);
 
   const comparisonData = useMemo(() => {
     return employees.map(emp => {
@@ -250,30 +253,6 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                         )) : <div className="col-span-full py-10 text-center text-gray-400 bg-gray-50 rounded-3xl border border-dashed border-gray-200">لا توجد مهام روتينية معينة</div>}
                     </div>
                 </div>
-
-                {/* Evaluative Vision Section */}
-                <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-12 opacity-5 rotate-12 group-hover:rotate-0 transition-transform duration-700 pointer-events-none">
-                        <Award size={200} />
-                    </div>
-                    <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
-                        <div className="w-24 h-24 bg-white/10 backdrop-blur-2xl rounded-[2rem] flex items-center justify-center border border-white/20 shadow-inner shrink-0">
-                            <Target size={48} className="text-amber-400" />
-                        </div>
-                        <div>
-                            <h4 className="text-2xl font-black text-white mb-4">رؤية تقييمية للمدير</h4>
-                            <p className="text-indigo-100 text-lg leading-relaxed font-medium italic">
-                                {adherenceStats.attendanceRate >= 95 && taskBreakdown.every(t => t.rate >= 90) ? (
-                                    "يتمتع الموظف بمعدل التزام استثنائي مع دقة متناهية في تنفيذ المهام الروتينية. أداؤه يعكس انضباطاً ذاتياً عالياً وقدرة على إدارة الوقت بفعالية قصوى."
-                                ) : adherenceStats.attendanceRate < 70 ? (
-                                    "يوجد تراجع ملحوظ في معدل الالتزام برفع التقارير اليومية؛ هذا الخلل يؤثر على دقة التقييم الإجمالي. يوصى بمراجعة الموظف لمعرفة أسباب عدم الانتظام."
-                                ) : (
-                                    "الأداء العام للموظف مستقر ومقبول، ولكن توجد بعض المهام الروتينية التي تظهر نسبة إنجاز منخفضة (أقل من 80%). يوصى بتركيز التوجيه على تحسين جودة هذه المهام المحددة."
-                                )}
-                            </p>
-                        </div>
-                    </div>
-                </div>
             </div>
         ) : (
             <div className="space-y-12 relative z-10">
@@ -380,9 +359,19 @@ const TaskPerformanceCard: React.FC<{ item: any }> = ({ item }) => {
                 <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
                     <div className={`h-full transition-all duration-1000 ${rate >= 90 ? 'bg-emerald-500' : rate >= 60 ? 'bg-indigo-500' : 'bg-red-500'}`} style={{ width: `${rate}%` }}></div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="text-center p-3 bg-emerald-50 rounded-2xl border border-emerald-100"><p className="text-[9px] font-black text-emerald-600 uppercase mb-0.5 tracking-tighter">مرات التنفيذ</p><p className="text-lg font-black text-emerald-800 leading-none">{item.completed}</p></div>
-                    <div className="text-center p-3 bg-red-50 rounded-2xl border border-red-100"><p className="text-[9px] font-black text-red-600 uppercase mb-0.5 tracking-tighter">مرات التعثر</p><p className="text-lg font-black text-red-800 leading-none">{item.pending}</p></div>
+                <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                      <p className="text-[9px] font-black text-emerald-600 uppercase mb-0.5 tracking-tighter">منفذة</p>
+                      <p className="text-lg font-black text-emerald-800 leading-none">{item.completed}</p>
+                    </div>
+                    <div className="text-center p-3 bg-red-50 rounded-2xl border border-red-100">
+                      <p className="text-[9px] font-black text-red-600 uppercase mb-0.5 tracking-tighter">غير منفذة</p>
+                      <p className="text-lg font-black text-red-800 leading-none">{item.pending}</p>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                      <p className="text-[9px] font-black text-gray-500 uppercase mb-0.5 tracking-tighter">لا تنطبق</p>
+                      <p className="text-lg font-black text-gray-700 leading-none">{item.notApplicable}</p>
+                    </div>
                 </div>
             </div>
         </div>
