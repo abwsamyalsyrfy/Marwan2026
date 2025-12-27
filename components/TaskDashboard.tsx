@@ -7,7 +7,7 @@ import {
   AlertCircle, Sparkles, Loader2, ArrowUpRight, 
   TrendingUp, Zap, Target, Award, ChevronRight, PieChart,
   ShieldCheck, AlertOctagon, UserCheck, UserX, MessageSquare,
-  LayoutGrid, ListChecks, Layers
+  LayoutGrid, ListChecks, Layers, CalendarDays
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -63,52 +63,98 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   };
 
   const stats = useMemo(() => {
-    const relevantLogs = isAdmin ? logs : logs.filter(l => l.employeeId === currentUser.id);
-    const approvedLogs = relevantLogs.filter(l => l.approvalStatus === 'Approved' || (!isAdmin && l.approvalStatus !== 'Rejected'));
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
     
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todayLogs = logs.filter(l => String(l.logDate || '').startsWith(todayStr));
-    
-    // Admin Specific: How many unique employees logged today?
-    const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
-    const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval');
-
-    // Individual Progress
-    const userAssignments = assignments.filter(a => a.employeeId === currentUser.id);
-    const todayUserCompleted = logs.filter(l => l.employeeId === currentUser.id && l.logDate.startsWith(todayStr) && (l.status === 'Completed' || l.status === 'منفذة')).length;
-    const todayProgress = userAssignments.length > 0 ? Math.round((todayUserCompleted / userAssignments.length) * 100) : 0;
-
-    const totalApproved = approvedLogs.length;
-    const completedCount = approvedLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
-    const rate = totalApproved > 0 ? Math.round((completedCount / totalApproved) * 100) : 0;
-
-    // Routine vs Extra Workload (Admin only)
-    const workloadData = {
-      routine: todayLogs.filter(l => l.taskType === 'Daily').length,
-      extra: todayLogs.filter(l => l.taskType === 'Extra').length
+    // helper to filter by days ago
+    const getLogsInLastDays = (logList: TaskLog[], days: number) => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      return logList.filter(l => new Date(l.logDate) >= cutoff);
     };
 
-    // 7-Day Efficiency
-    const chartData = [];
-    for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const dayLogs = logs.filter(l => String(l.logDate || '').startsWith(dateStr));
-        chartData.push({
-            dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
-            completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
-            total: dayLogs.length
-        });
+    // Calculate generic stats based on role
+    if (isAdmin) {
+      const todayLogs = logs.filter(l => l.logDate.startsWith(todayStr));
+      const weekLogs = getLogsInLastDays(logs, 7);
+      
+      const calcRate = (list: TaskLog[]) => {
+        const relevant = list.filter(l => l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة');
+        if (relevant.length === 0) return 0;
+        const completed = relevant.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+        return Math.round((completed / relevant.length) * 100);
+      };
+
+      const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
+      const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval');
+
+      // 7-Day Trend for Team
+      const chartData = [];
+      for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          const dayLogs = logs.filter(l => l.logDate.startsWith(dateStr));
+          chartData.push({
+              dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
+              completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
+              total: dayLogs.length
+          });
+      }
+
+      return {
+        isAdmin: true,
+        todayRate: calcRate(todayLogs),
+        weekRate: calcRate(weekLogs),
+        activeStaffToday,
+        totalStaff: employees.length,
+        pendingApprovalsCount: pendingApprovalsList.length,
+        pendingApprovalsList: pendingApprovalsList.slice(0, 10),
+        chartData
+      };
+    } else {
+      // Individual Mode
+      const myLogs = logs.filter(l => l.employeeId === currentUser.id);
+      const myTodayLogs = myLogs.filter(l => l.logDate.startsWith(todayStr));
+      const myWeekLogs = getLogsInLastDays(myLogs, 7);
+      const myMonthLogs = getLogsInLastDays(myLogs, 30);
+
+      const calcRate = (list: TaskLog[]) => {
+        const relevant = list.filter(l => l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة');
+        if (relevant.length === 0) return 0;
+        const completed = relevant.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+        return Math.round((completed / relevant.length) * 100);
+      };
+
+      const myAssignments = assignments.filter(a => a.employeeId === currentUser.id);
+      const completedToday = myTodayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+      const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : 0;
+
+      // 7-Day Trend for Individual
+      const chartData = [];
+      for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          const dayLogs = myLogs.filter(l => l.logDate.startsWith(dateStr));
+          chartData.push({
+              dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
+              completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
+              total: dayLogs.length
+          });
+      }
+
+      return {
+        isAdmin: false,
+        todayRate: calcRate(myTodayLogs),
+        weekRate: calcRate(myWeekLogs),
+        monthRate: calcRate(myMonthLogs),
+        progressToday,
+        completedToday,
+        totalAssigned: myAssignments.length,
+        chartData
+      };
     }
-
-    return { 
-      rate, todayProgress, chartData, pendingApprovalsList,
-      activeStaffToday, totalStaff: employees.length, workloadData,
-      totalLogs: logs.length,
-      todayUserCompleted,
-      totalUserAssigned: userAssignments.length
-    };
   }, [logs, currentUser.id, isAdmin, assignments, employees]);
 
   return (
@@ -127,12 +173,12 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                 <Zap size={32} fill="white" />
               </div>
             )}
-            {isAdmin ? 'مركز قيادة النظام' : `مرحباً بك، ${currentUser.name.split(' ')[0]}`}
+            {isAdmin ? 'مركز قيادة الفريق' : `أداءك الشخصي، ${currentUser.name.split(' ')[0]}`}
           </h1>
           <p className="text-gray-500 mt-2 font-medium">
             {isAdmin 
-              ? `يوجد ${stats.pendingApprovalsList.length} سجل بانتظار مراجعتك اليوم.` 
-              : `أنجزت ${stats.todayUserCompleted} من أصل ${stats.totalUserAssigned} مهام روتينية.`}
+              ? `يوجد ${stats.pendingApprovalsCount} سجل بانتظار مراجعتك حالياً.` 
+              : `لقد أنجزت ${stats.completedToday} مهمة روتينية اليوم.`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -149,20 +195,20 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       </div>
 
       {/* Main KPI Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {isAdmin ? (
           <>
-            <StatCard label="التزام الفريق اليوم" value={`${Math.round((stats.activeStaffToday / stats.totalStaff) * 100 || 0)}%`} subLabel={`تفاعل ${stats.activeStaffToday} من ${stats.totalStaff}`} icon={<Users className="text-blue-600" />} color="blue" />
-            <StatCard label="طلبات المراجعة" value={stats.pendingApprovalsList.length} subLabel="تحتاج اعتماد إداري" icon={<Clock className="text-amber-600" />} color="amber" />
-            <StatCard label="كفاءة التنفيذ" value={`${stats.rate}%`} subLabel="إجمالي المهام المنجزة" icon={<Trophy className="text-indigo-600" />} color="indigo" />
-            <StatCard label="إجمالي القاعدة" value={stats.totalLogs} subLabel="سجلات ترحيل المهام" icon={<Layers className="text-emerald-600" />} color="emerald" />
+            <StatCard label="إنجاز الفريق اليوم" value={`${stats.todayRate}%`} subLabel="معدل تنفيذ المهام اليومي" icon={<Target className="text-blue-600" />} color="blue" />
+            <StatCard label="التزام الأسبوع" value={`${stats.weekRate}%`} subLabel="أداء الفريق خلال 7 أيام" icon={<CalendarCheck className="text-indigo-600" />} color="indigo" />
+            <StatCard label="الموظفين النشطين" value={`${stats.activeStaffToday}/${stats.totalStaff}`} subLabel="من سجلوا تقاريرهم اليوم" icon={<Users className="text-emerald-600" />} color="emerald" />
+            <StatCard label="طلبات المراجعة" value={stats.pendingApprovalsCount} subLabel="بانتظار الاعتماد" icon={<Clock className="text-amber-600" />} color="amber" />
           </>
         ) : (
           <>
-            <StatCard label="معدل إنجازك" value={`${stats.rate}%`} subLabel="إجمالي مهامك المعتمدة" icon={<Award className="text-amber-600" />} color="amber" />
-            <StatCard label="مهام اليوم" value={`${stats.todayUserCompleted}/${stats.totalUserAssigned}`} subLabel="الالتزام بالروتين" icon={<Target className="text-emerald-600" />} color="emerald" />
-            <StatCard label="الحالة" value="نشط" subLabel="متصل بالنظام السحابي" icon={<UserCheck className="text-indigo-600" />} color="indigo" />
-            <StatCard label="الترتيب" value="#1" subLabel="فئة الموظفين المثاليين" icon={<Trophy className="text-blue-600" />} color="blue" />
+            <StatCard label="إنجازك اليوم" value={`${stats.todayRate}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
+            <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<Trophy className="text-indigo-600" />} color="indigo" />
+            <StatCard label="إنجازك الشهري" value={`${stats.monthRate}%`} subLabel="خلال آخر 30 يوم" icon={<CalendarDays className="text-blue-600" />} color="blue" />
+            <StatCard label="الترتيب الحالي" value="#1" subLabel="بناءً على الالتزام بالوقت" icon={<Award className="text-emerald-600" />} color="emerald" />
           </>
         )}
       </div>
@@ -180,12 +226,12 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                   <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
                 </h3>
                 <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">
-                  {stats.pendingApprovalsList.length} طلب
+                  {stats.pendingApprovalsCount} طلب
                 </span>
               </div>
               
               <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar flex-1">
-                {stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.slice(0, 10).map(log => {
+                {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
                   const emp = employees.find(e => e.id === log.employeeId);
                   return (
                     <div key={log.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-200 group hover:border-indigo-200 hover:bg-white transition-all duration-300">
@@ -211,10 +257,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                   </div>
                 )}
               </div>
-              
-              <button onClick={() => {/* Navigate to full report */}} className="mt-4 w-full py-3 text-xs font-bold text-gray-500 hover:text-indigo-600 bg-gray-50 hover:bg-indigo-50 rounded-xl transition-all">
-                انتقال لتقرير المراجعة الكامل <ChevronRight size={14} className="inline mr-1" />
-              </button>
             </div>
           ) : (
             <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[450px]">
@@ -228,17 +270,17 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                   <circle 
                     cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" 
                     strokeDasharray={540.35}
-                    strokeDashoffset={540.35 - (540.35 * stats.todayProgress) / 100}
+                    strokeDashoffset={540.35 - (540.35 * (stats.isAdmin ? 0 : stats.progressToday)) / 100}
                     strokeLinecap="round"
                     className="text-indigo-600 transition-all duration-1000 ease-out"
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-black text-gray-900">{stats.todayProgress}%</span>
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">المعدل الحالي</span>
+                  <span className="text-4xl font-black text-gray-900">{stats.isAdmin ? '0' : stats.progressToday}%</span>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">التقدم اليومي</span>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 mb-8 font-medium">أكمل روتينك اليومي للحفاظ على سلسلة التميز</p>
+              <p className="text-sm text-gray-500 mb-8 font-medium">الاستمرار في تسجيل المهام يرفع من نقاط تميزك</p>
               <button onClick={onStartLogging} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
                 سجل مهامك الآن <ChevronRight size={18} />
               </button>
@@ -252,9 +294,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
             <div>
               <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3">
                 <BarChart3 className="text-indigo-600" size={24} />
-                {isAdmin ? 'تحليل تدفق العمليات' : 'إحصائيات التزامك الأسبوعي'}
+                {isAdmin ? 'مؤشرات أداء الفريق الأسبوعية' : 'سجل التزامك الشخصي (7 أيام)'}
               </h3>
-              <p className="text-sm text-gray-400 mt-1">تتبع كفاءة إنجاز المهام على مدار 7 أيام مضت</p>
+              <p className="text-sm text-gray-400 mt-1">رسم بياني يوضح حجم المهام المنجزة يومياً</p>
             </div>
             
             <div className="flex gap-4 p-1.5 bg-gray-50 rounded-xl">
@@ -264,13 +306,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                </div>
                <div className="flex items-center gap-1.5 px-3 py-1.5">
                   <span className="w-2.5 h-2.5 bg-gray-200 rounded-full"></span>
-                  <span className="text-[10px] font-black text-gray-500">المسجل</span>
+                  <span className="text-[10px] font-black text-gray-500">الإجمالي</span>
                </div>
             </div>
           </div>
 
           <div className="flex-1 flex items-end justify-between gap-6 px-4 mb-4">
-            {stats.chartData.map((day, idx) => {
+            {stats.chartData && stats.chartData.map((day, idx) => {
               const maxVal = Math.max(...stats.chartData.map(d => d.total), 1);
               const heightTotal = (day.total / maxVal) * 100;
               const heightComp = day.total > 0 ? (day.completed / day.total) * 100 : 0;
@@ -290,27 +332,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
               );
             })}
           </div>
-          
-          {isAdmin && (
-            <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-between">
-              <div className="flex gap-10">
-                <div>
-                   <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">المهام الروتينية اليوم</span>
-                   <span className="text-xl font-black text-gray-900">{stats.workloadData.routine}</span>
-                </div>
-                <div>
-                   <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">المهام الإضافية اليوم</span>
-                   <span className="text-xl font-black text-indigo-600">{stats.workloadData.extra}</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-gray-400 block mb-1">حالة الأنظمة</span>
-                <span className="flex items-center gap-1.5 text-xs font-black text-emerald-600">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div> نظام Firestore نشط
-                </span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -329,7 +350,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                     </div>
                     <div>
                       <h3 className="text-2xl font-black text-white">المستشار الاستراتيجي الذكي</h3>
-                      <p className="text-indigo-300 text-sm mt-1">تحليل الأداء بواسطة Gemini AI لتحسين كفاءة العمل</p>
+                      <p className="text-indigo-300 text-sm mt-1">تحليل أداء الفريق بواسطة Gemini AI</p>
                     </div>
                  </div>
                  <button 
@@ -348,7 +369,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                     <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full"></div>
                     <Loader2 className="animate-spin relative" size={64} strokeWidth={3} />
                   </div>
-                  <p className="font-bold text-xl tracking-wide animate-pulse">جاري تشريح البيانات واستنباط التوصيات الاستراتيجية...</p>
+                  <p className="font-bold text-xl tracking-wide animate-pulse">جاري فحص سجلات الفريق واستخراج التوصيات...</p>
                 </div>
               ) : insights ? (
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">

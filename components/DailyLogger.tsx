@@ -22,9 +22,19 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
   const [leaveType, setLeaveType] = useState('Weekly');
   const [showHistory, setShowHistory] = useState(false);
 
+  // ترتيب المهام المسندة للموظف بناءً على ترتيب المهام في جدول المهام الرئيسي
   const empAssignments = useMemo(() => {
-    return assignments.filter(a => a.employeeId === currentUser.id);
-  }, [assignments, currentUser.id]);
+    const userAssignments = assignments.filter(a => a.employeeId === currentUser.id);
+    // جلب معرفات المهام بالترتيب الذي تظهر به في المصفوفة الرئيسية (ترتيب قاعدة البيانات)
+    const taskOrder = tasks.map(t => t.id);
+    
+    // فرز التعيينات بناءً على موقع المهمة في القائمة الأصلية
+    return userAssignments.sort((a, b) => {
+        const indexA = taskOrder.indexOf(a.taskId);
+        const indexB = taskOrder.indexOf(b.taskId);
+        return indexA - indexB;
+    });
+  }, [assignments, currentUser.id, tasks]);
 
   const existingLogsForToday = useMemo(() => {
     return logs.filter(l => l.employeeId === currentUser.id && l.logDate.startsWith(selectedDate));
@@ -68,7 +78,7 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     const routineLogs: TaskLog[] = empAssignments.map(assignment => {
       const taskDef = tasks.find(t => t.id === assignment.taskId);
       return {
-        id: `LOG-${Date.now()}-${Math.random()}`, // سيتم استبداله بمعرف حتمي في db.ts
+        id: `LOG-${Date.now()}-${Math.random()}`, 
         logDate: logDateISO,
         employeeId: currentUser.id,
         taskId: assignment.taskId,
@@ -107,7 +117,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     onSaveLogs([leaveLog]);
   };
 
-  // واجهة في حال كان الموظف قد سجل اليوم
   if (hasExistingLogs && !showHistory) {
     return (
       <div className="max-w-xl mx-auto mt-10 p-10 bg-white rounded-[2.5rem] shadow-2xl border border-indigo-100 text-center animate-fade-in relative overflow-hidden">
@@ -139,7 +148,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     );
   }
 
-  // واجهة عرض السجل الحالي لليوم (لمنع التكرار)
   if (showHistory) {
       return (
           <div className="max-w-2xl mx-auto mt-10 bg-white p-8 rounded-[2.5rem] shadow-2xl animate-fade-in border border-gray-100">
