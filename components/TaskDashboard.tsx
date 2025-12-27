@@ -1,13 +1,12 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { DashboardStats, TaskLog, Employee, TeamInsight, Task, Assignment } from '../types';
+import { TaskLog, Employee, TeamInsight, Assignment } from '../types';
 import { 
-  BarChart3, CheckCircle2, Trophy, RefreshCw, Briefcase, 
-  CalendarCheck, Users, Activity, Clock, Check, X, 
-  AlertCircle, Sparkles, Loader2, ArrowUpRight, 
-  TrendingUp, Zap, Target, Award, ChevronRight, PieChart,
-  ShieldCheck, AlertOctagon, UserCheck, UserX, MessageSquare,
-  LayoutGrid, ListChecks, Layers, CalendarDays
+  BarChart3, CheckCircle2, RefreshCw, 
+  CalendarCheck, Users, Clock, Check, X, 
+  Sparkles, Loader2, TrendingUp, Zap, Target, 
+  ChevronRight, ShieldCheck, MessageSquare,
+  LayoutGrid, ListChecks, CalendarDays
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -16,7 +15,6 @@ interface TaskDashboardProps {
   currentUser: Employee;
   logs: TaskLog[]; 
   employees?: Employee[]; 
-  tasks?: Task[];
   assignments?: Assignment[];
   onRefresh: () => void;
   onStartLogging: () => void;
@@ -25,7 +23,7 @@ interface TaskDashboardProps {
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
-  currentUser, logs, employees = [], tasks = [], assignments = [], 
+  currentUser, logs, employees = [], assignments = [], 
   onRefresh, onStartLogging, onApproveLog, onRejectLog 
 }) => {
   const isAdmin = currentUser.role === 'Admin';
@@ -56,39 +54,44 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       setInsights(insightWithTime);
     } catch (e) {
       console.error(e);
-      alert("تعذر توليد التحليلات حالياً، يرجى المحقق من الاتصال.");
     } finally {
       setLoadingInsights(false);
     }
+  };
+
+  // --- Helpers for Precise Stats ---
+  const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة'].includes(status);
+  const isCompletedStatus = (status: string) => ['Completed', 'منفذة'].includes(status);
+  const isWeekend = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const day = d.getDay();
+    return day === 4 || day === 5; // Thursday and Friday
   };
 
   const stats = useMemo(() => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
     
-    // helper to filter by days ago
     const getLogsInLastDays = (logList: TaskLog[], days: number) => {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       return logList.filter(l => new Date(l.logDate) >= cutoff);
     };
 
-    // Calculate generic stats based on role
     if (isAdmin) {
       const todayLogs = logs.filter(l => l.logDate.startsWith(todayStr));
       const weekLogs = getLogsInLastDays(logs, 7);
       
       const calcRate = (list: TaskLog[]) => {
-        const relevant = list.filter(l => l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة');
+        const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
         if (relevant.length === 0) return 0;
-        const completed = relevant.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+        const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
         return Math.round((completed / relevant.length) * 100);
       };
 
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
       const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval');
 
-      // 7-Day Trend for Team
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date();
@@ -97,7 +100,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           const dayLogs = logs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
               dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
-              completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
+              completed: dayLogs.filter(l => isCompletedStatus(l.status)).length,
               total: dayLogs.length
           });
       }
@@ -113,31 +116,32 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         chartData
       };
     } else {
-      // Individual Mode
       const myLogs = logs.filter(l => l.employeeId === currentUser.id);
       const myTodayLogs = myLogs.filter(l => l.logDate.startsWith(todayStr));
       const myWeekLogs = getLogsInLastDays(myLogs, 7);
       const myMonthLogs = getLogsInLastDays(myLogs, 30);
 
       const calcRate = (list: TaskLog[]) => {
-        const relevant = list.filter(l => l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة');
+        const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
         if (relevant.length === 0) return 0;
-        const completed = relevant.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+        const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
         return Math.round((completed / relevant.length) * 100);
       };
 
       const myAssignments = assignments.filter(a => a.employeeId === currentUser.id);
-      const completedToday = myTodayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length;
+      const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
       const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : 0;
 
-      // حساب عدد أيام العمل الموثقة (أيام فريدة سجل فيها مهام روتينية فقط)
+      // حساب عدد أيام العمل الموثقة بدقة (أيام المهام الروتينية باستثناء الإجازات والخميس/الجمعة)
       const reportingDays = new Set(
         myLogs
-          .filter(l => l.taskType === 'Daily' && l.status !== 'Leave' && l.status !== 'إجازة' && l.status !== 'عطلة')
+          .filter(l => {
+            const datePart = l.logDate.split('T')[0];
+            return l.taskType === 'Daily' && !isLeaveStatus(l.status) && !isWeekend(datePart);
+          })
           .map(l => l.logDate.split('T')[0])
       ).size;
 
-      // 7-Day Trend for Individual
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date();
@@ -146,7 +150,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           const dayLogs = myLogs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
               dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
-              completed: dayLogs.filter(l => l.status === 'Completed' || l.status === 'منفذة').length,
+              completed: dayLogs.filter(l => isCompletedStatus(l.status)).length,
               total: dayLogs.length
           });
       }
@@ -159,7 +163,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         progressToday,
         completedToday,
         reportingDays,
-        totalAssigned: myAssignments.length,
         chartData
       };
     }
@@ -167,8 +170,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      
-      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-3">
@@ -190,10 +191,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={onStartLogging}
-            className="flex items-center gap-2 px-6 py-3.5 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg active:scale-95"
-          >
+          <button onClick={onStartLogging} className="flex items-center gap-2 px-6 py-3.5 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg active:scale-95">
             <PlusIcon /> {isAdmin ? 'إضافة سجل يدوي' : 'تسجيل مهام اليوم'}
           </button>
           <button onClick={onRefresh} className="p-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl hover:bg-gray-50 transition-colors shadow-sm">
@@ -202,7 +200,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
-      {/* Main KPI Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {isAdmin ? (
           <>
@@ -214,17 +211,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         ) : (
           <>
             <StatCard label="إنجازك اليوم" value={`${stats.todayRate}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
-            <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<Trophy className="text-indigo-600" />} color="indigo" />
+            <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<TrendingUp className="text-indigo-600" />} color="indigo" />
             <StatCard label="إنجازك الشهري" value={`${stats.monthRate}%`} subLabel="خلال آخر 30 يوم" icon={<CalendarDays className="text-blue-600" />} color="blue" />
-            <StatCard label="أيام العمل الموثقة" value={stats.reportingDays} subLabel="إجمالي أيام تسجيل المهام" icon={<CalendarCheck className="text-emerald-600" />} color="emerald" />
+            <StatCard label="أيام العمل الموثقة" value={stats.reportingDays} subLabel="بدون الإجازات والخميس والجمعة" icon={<CalendarCheck className="text-emerald-600" />} color="emerald" />
           </>
         )}
       </div>
 
-      {/* Grid: Action Center & Performance Analysis */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Column: Urgent Actions (Admins) / Daily Progress (Users) */}
         <div className="lg:col-span-4 flex flex-col gap-8">
           {isAdmin ? (
             <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-100 border border-gray-100 p-6 flex-1 flex flex-col relative overflow-hidden">
@@ -233,11 +227,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                 <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
                   <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
                 </h3>
-                <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">
-                  {stats.pendingApprovalsCount} طلب
-                </span>
+                <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">{stats.pendingApprovalsCount} طلب</span>
               </div>
-              
               <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar flex-1">
                 {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
                   const emp = employees.find(e => e.id === log.employeeId);
@@ -268,9 +259,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
             </div>
           ) : (
             <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[450px]">
-              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12">
-                 <Target size={180} />
-              </div>
+              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={180} /></div>
               <h3 className="text-xl font-black text-gray-900 mb-8">إنجازك اليوم</h3>
               <div className="relative w-48 h-48 mb-10 scale-110">
                 <svg className="w-full h-full transform -rotate-90">
@@ -296,7 +285,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           )}
         </div>
 
-        {/* Right Column: Performance Trends (Common) */}
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col">
           <div className="flex justify-between items-center mb-10">
             <div>
@@ -306,7 +294,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
               </h3>
               <p className="text-sm text-gray-400 mt-1">رسم بياني يوضح حجم المهام المنجزة يومياً</p>
             </div>
-            
             <div className="flex gap-4 p-1.5 bg-gray-50 rounded-xl">
                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg shadow-sm">
                   <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span>
@@ -318,13 +305,11 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                </div>
             </div>
           </div>
-
           <div className="flex-1 flex items-end justify-between gap-6 px-4 mb-4">
             {stats.chartData && stats.chartData.map((day, idx) => {
               const maxVal = Math.max(...stats.chartData.map(d => d.total), 1);
               const heightTotal = (day.total / maxVal) * 100;
               const heightComp = day.total > 0 ? (day.completed / day.total) * 100 : 0;
-              
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-4 group cursor-default">
                   <div className="w-full max-w-[50px] h-64 flex items-end justify-center relative">
@@ -343,13 +328,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
-      {/* Strategic Advisor (AI Insights) */}
       {isAdmin && (
         <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-indigo-500/20 group">
-           <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity duration-1000">
-              <Sparkles size={200} />
-           </div>
-           
+           <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity duration-1000"><Sparkles size={200} /></div>
            <div className="relative z-10">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
                  <div className="flex items-center gap-5">
@@ -361,16 +342,10 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                       <p className="text-indigo-300 text-sm mt-1">تحليل أداء الفريق بواسطة Gemini AI</p>
                     </div>
                  </div>
-                 <button 
-                  onClick={generateNewInsights} 
-                  disabled={loadingInsights}
-                  className="flex items-center gap-3 px-8 py-3.5 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-2xl shadow-white/5 active:scale-95 disabled:opacity-50"
-                 >
-                    {loadingInsights ? <Loader2 size={20} className="animate-spin"/> : <RefreshCw size={20} />}
-                    توليد تحليل جديد
+                 <button onClick={generateNewInsights} disabled={loadingInsights} className="flex items-center gap-3 px-8 py-3.5 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-2xl shadow-white/5 active:scale-95 disabled:opacity-50">
+                    {loadingInsights ? <Loader2 size={20} className="animate-spin"/> : <RefreshCw size={20} />} توليد تحليل جديد
                  </button>
               </div>
-
               {loadingInsights ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-6 text-indigo-200">
                   <div className="relative">
@@ -383,11 +358,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
                    <div className="xl:col-span-7 space-y-8">
                       <div className="bg-white/5 backdrop-blur-md p-10 rounded-[2.5rem] border border-white/10 shadow-2xl">
-                         <h4 className="text-amber-400 font-black mb-6 text-xs uppercase tracking-[0.3em] flex items-center gap-2">
-                           <ShieldCheck size={18} /> رؤية الأداء العام
-                         </h4>
+                         <h4 className="text-amber-400 font-black mb-6 text-xs uppercase tracking-[0.3em] flex items-center gap-2"><ShieldCheck size={18} /> رؤية الأداء العام</h4>
                          <p className="text-indigo-50 leading-relaxed text-xl font-medium">{insights.summary}</p>
-                         
                          <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-2 gap-8">
                             <div>
                                <span className="text-[10px] text-indigo-400 font-black uppercase block mb-2 tracking-widest">مؤشر الإنتاجية</span>
@@ -407,11 +379,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                          </div>
                       </div>
                    </div>
-                   
                    <div className="xl:col-span-5 bg-white/5 backdrop-blur-sm rounded-[2.5rem] p-8 border border-white/10">
-                      <h4 className="text-indigo-200 font-black mb-8 flex items-center gap-2 text-sm uppercase tracking-widest">
-                        <Zap size={20} className="text-amber-400" /> مهام مقترح أتمتتها أو ترحيلها
-                      </h4>
+                      <h4 className="text-indigo-200 font-black mb-8 flex items-center gap-2 text-sm uppercase tracking-widest"><Zap size={20} className="text-amber-400" /> مهام مقترح أتمتتها</h4>
                       <div className="space-y-4 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar">
                         {insights.suggestedRoutineTasks.map((task, i) => (
                           <div key={i} className="group bg-indigo-500/10 p-6 rounded-[1.5rem] border border-indigo-400/10 hover:border-indigo-400/40 hover:bg-indigo-500/20 transition-all duration-300">
@@ -427,9 +396,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                 </div>
               ) : (
                 <div className="text-center py-24 bg-white/5 rounded-[3rem] border-2 border-dashed border-white/10">
-                   <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <LayoutGrid size={32} className="text-indigo-400" />
-                   </div>
+                   <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6"><LayoutGrid size={32} className="text-indigo-400" /></div>
                    <p className="text-indigo-200 font-bold mb-8 text-lg">بانتظار البيانات لتوليد الرؤى الاستراتيجية للفريق</p>
                    <button onClick={generateNewInsights} className="px-10 py-4 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-xl">تحليل السجلات الآن</button>
                 </div>
@@ -437,8 +404,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
            </div>
         </div>
       )}
-
-      {/* Custom Scrollbar Styles */}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -449,8 +414,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   );
 };
 
-// --- Helper Components ---
-
 const StatCard = ({ label, value, subLabel, icon, color }: { label: string, value: string | number, subLabel: string, icon: React.ReactNode, color: string }) => {
   const colors: Record<string, string> = {
     amber: 'bg-amber-50 text-amber-600',
@@ -458,14 +421,12 @@ const StatCard = ({ label, value, subLabel, icon, color }: { label: string, valu
     emerald: 'bg-emerald-50 text-emerald-600',
     blue: 'bg-blue-50 text-blue-600'
   };
-
   const borderColors: Record<string, string> = {
     amber: 'border-amber-100',
     indigo: 'border-indigo-100',
     emerald: 'border-emerald-100',
     blue: 'border-blue-100'
   };
-
   return (
     <div className={`bg-white p-7 rounded-[2rem] shadow-sm border ${borderColors[color]} group hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden`}>
       <div className={`absolute top-0 right-0 w-1.5 h-full ${color === 'amber' ? 'bg-amber-500' : color === 'indigo' ? 'bg-indigo-500' : color === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
@@ -475,9 +436,7 @@ const StatCard = ({ label, value, subLabel, icon, color }: { label: string, valu
           <h3 className="text-4xl font-black text-gray-900 group-hover:text-indigo-600 transition-colors">{value}</h3>
           <p className="text-[10px] text-gray-500 mt-3 font-bold">{subLabel}</p>
         </div>
-        <div className={`p-4 rounded-2xl ${colors[color]} group-hover:scale-110 transition-transform shadow-inner`}>
-          {React.cloneElement(icon as React.ReactElement, { size: 24 })}
-        </div>
+        <div className={`p-4 rounded-2xl ${colors[color]} group-hover:scale-110 transition-transform shadow-inner`}>{React.cloneElement(icon as React.ReactElement, { size: 24 })}</div>
       </div>
     </div>
   );
