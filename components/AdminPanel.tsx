@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS } from '../types';
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Globe } from 'lucide-react';
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -154,7 +154,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // --- File Import Handler ---
-  // Helper to normalize data keys from Excel (handles Case Sensitivity & Aliases)
   const processImportedData = (data: any[], type: string) => {
     const getValue = (row: any, key: string) => {
         const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === key.toLowerCase());
@@ -192,10 +191,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              const rawDate = getValue(row, 'logdate') || getValue(row, 'date');
              let formattedDate = new Date().toISOString();
              
-             // Try to handle raw date input
              if (rawDate) {
                if (rawDate instanceof Date) formattedDate = rawDate.toISOString();
-               // Excel serial date handling could be added here if needed, usually sheet_to_json handles it
                else formattedDate = String(rawDate);
              }
 
@@ -207,7 +204,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  taskType: getValue(row, 'tasktype') || getValue(row, 'type') || 'Daily',
                  status: getValue(row, 'status') || 'Completed',
                  description: getValue(row, 'description') || getValue(row, 'desc') || '',
-                 approvalStatus: getValue(row, 'approvalstatus') || 'Approved' // Default import to Approved
+                 approvalStatus: getValue(row, 'approvalstatus') || 'Approved'
              } as TaskLog;
         }
         return row;
@@ -231,7 +228,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               const wb = read(bstr, { type: 'binary' });
               const wsname = wb.SheetNames[0];
               const ws = wb.Sheets[wsname];
-              // Use { raw: false } to get formatted strings (dates as text) which solves date parsing issues
               const rawData = utils.sheet_to_json(ws, { raw: false });
               
               const processedData = processImportedData(rawData, importType);
@@ -316,7 +312,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             { id: PERMISSIONS.MANAGE_SYSTEM, label: 'إدارة النظام' },
         ];
         
-        // Use safe access with optional chaining for permissions check
         const isAllSelected = allPermissions.every(p => formData?.permissions?.includes(p.id));
 
         return (
@@ -429,7 +424,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   return (
     <div className="space-y-6 animate-fade-in relative min-h-screen pb-20">
-      {/* ... Headers & Tabs ... */}
       <div className="bg-gradient-to-l from-amber-50 to-white border-r-4 border-amber-500 p-6 rounded-lg flex justify-between items-center shadow-sm">
          <div>
           <h3 className="text-amber-900 font-bold flex items-center gap-2 text-lg">
@@ -613,7 +607,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             </label>
                         </div>
                    </div>
-                    {/* ... Filters ... */}
                     <div className="flex items-center justify-between">
                          <div className="text-xs text-gray-500 font-bold">عدد السجلات: {filteredTaskLogs.length}</div>
                          <div className="flex gap-2">
@@ -628,7 +621,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             <tr>
                                 <th className="p-4 bg-gray-50 border-b">الوقت والتاريخ</th>
                                 <th className="p-4 bg-gray-50 border-b">المستخدم</th>
-                                <th className="p-4 bg-gray-50 border-b">نوع المهمة</th> {/* Added Task Type */}
+                                <th className="p-4 bg-gray-50 border-b">نوع المهمة</th>
                                 <th className="p-4 bg-gray-50 border-b">النشاط / المهمة</th>
                                 <th className="p-4 bg-gray-50 border-b">الحالة</th>
                                 <th className="p-4 bg-gray-50 border-b">الاعتماد</th>
@@ -638,7 +631,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <tbody className="divide-y divide-gray-100">
                             {filteredTaskLogs.map(log => {
                                 const empName = employees.find(e => e.id === log.employeeId)?.name || log.employeeId;
-                                // Safe date rendering
                                 const logDateVal = log.logDate ? new Date(log.logDate) : new Date();
                                 const isValidDate = !isNaN(logDateVal.getTime());
                                 const displayDate = isValidDate ? logDateVal.toLocaleDateString('ar-EG') : 'تاريخ غير صالح';
@@ -685,7 +677,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              </div>
         )}
         
-        {/* === SYSTEM LOGS TAB (New) === */}
+        {/* === SYSTEM LOGS TAB === */}
         {activeTab === 'system_logs' && (
              <div className="flex flex-col h-full">
                 <div className="p-4 border-b border-gray-100 flex gap-4 bg-gray-50">
@@ -719,12 +711,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
         )}
 
-        {/* === IMPORT TAB (New) === */}
+        {/* === IMPORT TAB === */}
         {activeTab === 'import' && (
              <div className="p-8 max-w-4xl mx-auto">
                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8">
                      <h3 className="text-lg font-bold text-blue-900 mb-2 flex items-center gap-2"><Database size={20}/> استيراد البيانات من Excel</h3>
-                     <p className="text-blue-700 text-sm">يمكنك استيراد الموظفين، المهام، التعيينات، أو سجلات المهام. يرجى التأكد من مطابقة أسماء الأعمدة (Header) في الملف (نقبل ID, Name, JobTitle... أو الأسماء بالعربية مثل رقم الموظف، الاسم).</p>
+                     <p className="text-blue-700 text-sm">يمكنك استيراد الموظفين، المهام، التعيينات، أو سجلات المهام. يرجى التأكد من مطابقة أسماء الأعمدة (Header) في الملف.</p>
                  </div>
 
                  <div className="flex gap-4 mb-6 justify-center flex-wrap">
@@ -744,7 +736,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                      />
                      <Upload size={48} className="mx-auto text-gray-400 mb-4" />
                      <p className="text-xl font-bold text-gray-700 mb-2">اضغط هنا أو اسحب الملف</p>
-                     <p className="text-sm text-gray-500">صيغ مدعومة: XLSX, CSV (نوع الاستيراد: {importType === 'employees' ? 'موظفين' : importType === 'tasks' ? 'مهام' : importType === 'assignments' ? 'تعيينات' : 'سجلات مهام'})</p>
+                     <p className="text-sm text-gray-500">صيغ مدعومة: XLSX, CSV</p>
                  </div>
 
                  {importStatus && (
@@ -766,7 +758,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              </div>
         )}
 
-        {/* === SETTINGS TAB (New) === */}
+        {/* === SETTINGS TAB === */}
         {activeTab === 'settings' && (
              <div className="p-8 max-w-4xl mx-auto">
                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><Settings size={24}/> إعدادات النظام</h3>
@@ -791,23 +783,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              </div>
                          </div>
                      </div>
-
-                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm mt-6">
-                        <h4 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
-                            <Globe size={20} /> نشر التطبيق (للموظفين)
-                        </h4>
-                        <div className="text-sm text-gray-600 space-y-2">
-                            <p>لتشغيل التطبيق وجعله متاحاً للموظفين عبر الإنترنت، يجب رفعه على استضافة (Hosting).</p>
-                            <p className="font-bold">خطوات الرفع على Firebase Hosting:</p>
-                            <ol className="list-decimal list-inside space-y-1 bg-gray-50 p-4 rounded-lg font-mono text-xs" dir="ltr">
-                                <li>npm install -g firebase-tools</li>
-                                <li>firebase login</li>
-                                <li>firebase init hosting (Choose 'public' as directory, Yes to single-page app)</li>
-                                <li>firebase deploy</li>
-                            </ol>
-                            <p className="mt-2 text-green-700 font-bold">سيكون رابط تطبيقك: <a href="https://taskease-11eb8.web.app" target="_blank" className="underline">https://taskease-11eb8.web.app</a></p>
-                        </div>
-                    </div>
 
                      <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                          <h4 className="font-bold text-gray-800 mb-4 border-b pb-2">معلومات النظام</h4>

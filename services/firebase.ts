@@ -2,38 +2,27 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-/**
- * إعدادات Firebase
- * لاستخدام قاعدة بيانات جديدة ونظيفة، قم باستبدال القيم أدناه بمفاتيح مشروعك الجديد 
- * من وحدة تحكم Firebase (Firebase Console -> Project Settings).
- */
+// تم استخراج هذه الإعدادات من الصورة التي أرسلتها
 const firebaseConfig = {
-  apiKey: "ضع_مفتاح_API_الجديد_هنا",
-  authDomain: "your-new-project.firebaseapp.com",
-  projectId: "your-new-project-id",
-  storageBucket: "your-new-project.firebasestorage.app",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456",
-  measurementId: "G-XXXXXXXXXX"
+  apiKey: "AIzaSyDyR2S9nr9lO1s3EiQEcBhZHr37U2twldE",
+  authDomain: "taskease-11eb8.firebaseapp.com",
+  projectId: "taskease-11eb8",
+  storageBucket: "taskease-11eb8.firebasestorage.app",
+  messagingSenderId: "984875735484",
+  appId: "1:984875735484:web:bc6f8db82c684ad988b3b9",
+  measurementId: "G-D5WJSWK5LS"
 };
 
 // تهيئة التطبيق
 let app;
-let dbInstance = null;
+let dbInstance;
 
 try {
-    // التحقق من أن المستخدم قام بتغيير القيم الافتراضية
-    const isConfigured = firebaseConfig.apiKey !== "ضع_مفتاح_API_الجديد_هنا" && firebaseConfig.apiKey !== "";
-    
-    if (isConfigured) {
-        app = initializeApp(firebaseConfig);
-        dbInstance = getFirestore(app);
-        console.log("✅ Firebase: متصل بنجاح بالسحابة");
-    } else {
-        console.warn("⚠️ Firebase: مفاتيح الاتصال مفقودة. سيتم العمل بنمط التخزين المحلي (Offline Mode)");
-    }
+    app = initializeApp(firebaseConfig);
+    dbInstance = getFirestore(app);
+    console.log("Firebase initialized successfully");
 } catch (error) {
-    console.error("❌ Firebase initialization failed:", error);
+    console.error("Firebase initialization failed:", error);
 }
 
 export const firestore = dbInstance;

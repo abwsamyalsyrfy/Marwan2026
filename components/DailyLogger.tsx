@@ -1,11 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { Employee, Task, Assignment, TaskLog } from '../types';
-// Added missing Sparkles import from lucide-react
-import { CheckCircle2, XCircle, ArrowLeft, Save, MinusCircle, Plus, CalendarOff, AlertTriangle, Calendar, ChevronRight, ChevronLeft, ClipboardList, Sparkles } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, Save, MinusCircle, Plus, CalendarOff, AlertTriangle, Calendar, ChevronRight, ChevronLeft, ClipboardList, Sparkles, History, Eye } from 'lucide-react';
 
 interface DailyLoggerProps {
-  currentUser: Employee; // Logged in user
+  currentUser: Employee; 
   tasks: Task[];
   assignments: Assignment[];
   logs: TaskLog[];
@@ -21,19 +20,20 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
   const [extraTasks, setExtraTasks] = useState<{description: string}[]>([]);
   const [newExtraTask, setNewExtraTask] = useState('');
   const [leaveType, setLeaveType] = useState('Weekly');
+  const [showHistory, setShowHistory] = useState(false);
 
   const empAssignments = useMemo(() => {
     return assignments.filter(a => a.employeeId === currentUser.id);
   }, [assignments, currentUser.id]);
 
-  const hasExistingLogs = useMemo(() => {
-    return logs.some(l => l.employeeId === currentUser.id && l.logDate.startsWith(selectedDate));
+  const existingLogsForToday = useMemo(() => {
+    return logs.filter(l => l.employeeId === currentUser.id && l.logDate.startsWith(selectedDate));
   }, [logs, currentUser.id, selectedDate]);
+
+  const hasExistingLogs = existingLogsForToday.length > 0;
 
   const toggleDecision = (taskId: string, status: 'Completed' | 'Pending' | 'NotApplicable') => {
     setTaskDecisions(prev => ({ ...prev, [taskId]: status }));
-    
-    // Auto-advance to next task after 300ms for smoother experience
     if (currentTaskIndex < empAssignments.length - 1) {
       setTimeout(() => {
         setCurrentTaskIndex(prev => prev + 1);
@@ -68,7 +68,7 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     const routineLogs: TaskLog[] = empAssignments.map(assignment => {
       const taskDef = tasks.find(t => t.id === assignment.taskId);
       return {
-        id: `LOG-${Date.now()}-${Math.random()}`,
+        id: `LOG-${Date.now()}-${Math.random()}`, // سيتم استبداله بمعرف حتمي في db.ts
         logDate: logDateISO,
         employeeId: currentUser.id,
         taskId: assignment.taskId,
@@ -107,20 +107,80 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     onSaveLogs([leaveLog]);
   };
 
-  if (hasExistingLogs) {
+  // واجهة في حال كان الموظف قد سجل اليوم
+  if (hasExistingLogs && !showHistory) {
     return (
-      <div className="max-w-xl mx-auto mt-10 p-10 bg-white rounded-3xl shadow-xl border border-green-100 text-center animate-fade-in">
-          <div className="w-20 h-20 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 size={40} />
+      <div className="max-w-xl mx-auto mt-10 p-10 bg-white rounded-[2.5rem] shadow-2xl border border-indigo-100 text-center animate-fade-in relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-indigo-600"></div>
+          <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner">
+            <CheckCircle2 size={48} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">التقرير محفوظ</h2>
-          <p className="text-gray-500 mb-8">لقد سجلت مهام اليوم ({selectedDate}) مسبقاً.</p>
-          <button onClick={onCancel} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all">العودة للرئيسية</button>
+          <h2 className="text-3xl font-black text-gray-900 mb-4">تقرير اليوم مكتمل</h2>
+          <p className="text-gray-500 mb-10 leading-relaxed font-medium">
+             لقد قمت بتسجيل مهامك بنجاح لتاريخ <span className="text-indigo-600 font-bold">{selectedDate}</span>. 
+             لا يمكن تكرار التسجيل لنفس اليوم لضمان دقة البيانات.
+          </p>
+          
+          <div className="grid grid-cols-1 gap-4">
+              <button 
+                onClick={() => setShowHistory(true)} 
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
+              >
+                <Eye size={20} /> عرض ما تم تسجيله اليوم
+              </button>
+              <button 
+                onClick={onCancel} 
+                className="w-full py-4 bg-gray-50 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all"
+              >
+                العودة للوحة التحكم
+              </button>
+          </div>
       </div>
     );
   }
 
-  // Register Leave View
+  // واجهة عرض السجل الحالي لليوم (لمنع التكرار)
+  if (showHistory) {
+      return (
+          <div className="max-w-2xl mx-auto mt-10 bg-white p-8 rounded-[2.5rem] shadow-2xl animate-fade-in border border-gray-100">
+              <div className="flex justify-between items-center mb-8 border-b border-gray-100 pb-6">
+                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3">
+                      <History className="text-indigo-600" /> سجلك لهذا اليوم
+                  </h2>
+                  <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                      <XCircle size={24} />
+                  </button>
+              </div>
+
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {existingLogsForToday.map((log) => (
+                      <div key={log.id} className="p-5 bg-gray-50 rounded-2xl border border-gray-200 flex justify-between items-center group">
+                          <div className="flex-1">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full mb-2 inline-block ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                  {log.taskType === 'Daily' ? 'روتينية' : 'إضافية'}
+                              </span>
+                              <p className="font-bold text-gray-800">{log.description}</p>
+                          </div>
+                          <div className="text-left">
+                              {log.status === 'Completed' || log.status === 'منفذة' ? 
+                                <span className="text-emerald-600 font-black text-xs bg-emerald-50 px-3 py-1 rounded-lg">منفذة</span> : 
+                                <span className="text-red-500 font-black text-xs bg-red-50 px-3 py-1 rounded-lg">غير منفذة</span>
+                              }
+                          </div>
+                      </div>
+                  ))}
+              </div>
+
+              <button 
+                onClick={onCancel} 
+                className="w-full mt-10 py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-xl"
+              >
+                العودة للرئيسية
+              </button>
+          </div>
+      )
+  }
+
   if (step === 'register-leave') {
     return (
       <div className="max-w-xl mx-auto mt-10 bg-white p-8 rounded-3xl shadow-xl border border-gray-100 animate-fade-in">
@@ -146,7 +206,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     );
   }
 
-  // Main Sequential Flow
   if (step === 'process-tasks') {
     const currentAssignment = empAssignments[currentTaskIndex];
     const currentTask = tasks.find(t => t.id === currentAssignment?.taskId);
@@ -155,7 +214,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
 
     return (
       <div className="max-w-2xl mx-auto animate-fade-in">
-         {/* Header with Progress Bar */}
          <div className="mb-8">
             <div className="flex justify-between items-center mb-4">
                <div>
@@ -178,7 +236,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
             </div>
          </div>
 
-         {/* Focused Task Card */}
          {empAssignments.length > 0 ? (
            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 min-h-[400px] flex flex-col justify-between relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-5">
@@ -230,7 +287,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
                 </button>
               </div>
 
-              {/* Navigation Buttons */}
               <div className="flex justify-between items-center mt-8 border-t border-gray-50 pt-6">
                 <button 
                   disabled={currentTaskIndex === 0}
@@ -270,7 +326,6 @@ const DailyLogger: React.FC<DailyLoggerProps> = ({ currentUser, tasks, assignmen
     );
   }
 
-  // Extra Tasks View (Final Step)
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
        <div className="mb-8">
