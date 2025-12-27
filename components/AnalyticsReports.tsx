@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Employee, TaskLog, Task, Assignment } from '../types';
-import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Activity, Clock, Star, Zap } from 'lucide-react';
+import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Activity, Clock, Star, Zap, Search, Filter, CheckSquare, Square, BarChart2 } from 'lucide-react';
 
 interface AnalyticsReportsProps {
   employees: Employee[];
@@ -13,6 +13,7 @@ interface AnalyticsReportsProps {
 export default function AnalyticsReports({ employees, logs, tasks = [], assignments = [] }: AnalyticsReportsProps) {
   const [viewMode, setViewMode] = useState<'individual' | 'comparative'>('individual');
   const [selectedEmpId, setSelectedEmpId] = useState<string>(employees[0]?.id || '');
+  const [selectedComparisonIds, setSelectedComparisonIds] = useState<string[]>(employees.map(e => e.id));
   const [dateRangeType, setDateRangeType] = useState<'week' | 'month' | 'custom'>('month');
   const [customStartDate, setCustomStartDate] = useState(() => {
     const d = new Date();
@@ -20,12 +21,15 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
     return d.toLocaleDateString('en-CA');
   });
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [empSearch, setEmpSearch] = useState('');
 
   const selectedEmployee = employees.find(e => e.id === selectedEmpId);
 
   // --- Helpers for Normalization ---
   const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة', 'Weekly'].includes(status);
   const isCompletedStatus = (status: string) => ['Completed', 'منفذة'].includes(status);
+  const isNotApplicableStatus = (status: string) => ['NotApplicable', 'لا تنطبق'].includes(status);
+  
   const isWeekend = (date: Date) => {
     const day = date.getDay();
     return day === 4 || day === 5; // الخميس والجمعة
@@ -61,13 +65,8 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
     });
   }, [logs, startDate, endDate]);
 
-  const empLogs = useMemo(() => {
-    if (!selectedEmpId) return [];
-    return filteredLogs.filter(l => l.employeeId === selectedEmpId)
-      .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime());
-  }, [filteredLogs, selectedEmpId]);
-
-  const adherenceStats = useMemo(() => {
+  const adherenceStatsForEmp = (empId: string) => {
+    const empLogs = filteredLogs.filter(l => l.employeeId === empId);
     let grossDays = 0;
     let presentDaysCount = 0; 
     let weekendHolidays = 0;
@@ -107,7 +106,9 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
     const attendanceRate = netWorkDays > 0 ? Math.round((presentDaysCount / netWorkDays) * 100) : 0;
     
     return { grossDays, netWorkDays, presentDays: presentDaysCount, totalLeaves, attendanceRate, manualLeaves, weekendHolidays };
-  }, [startDate, endDate, empLogs]);
+  };
+
+  const individualAdherence = useMemo(() => adherenceStatsForEmp(selectedEmpId), [startDate, endDate, filteredLogs, selectedEmpId]);
 
   const taskBreakdown = useMemo(() => {
     if (!selectedEmpId) return [];
@@ -115,13 +116,12 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
     const routineTasks = tasks.filter(t => assignedTaskIds.includes(t.id));
     
     return routineTasks.map(task => {
-        const relevantLogs = empLogs.filter(l => l.taskId === task.id);
+        const relevantLogs = filteredLogs.filter(l => l.employeeId === selectedEmpId && l.taskId === task.id);
         const completed = relevantLogs.filter(l => isCompletedStatus(l.status)).length;
         const pending = relevantLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
-        const notApplicable = relevantLogs.filter(l => l.status === 'NotApplicable' || l.status === 'لا تنطبق').length;
+        const notApplicable = relevantLogs.filter(l => isNotApplicableStatus(l.status)).length;
         
-        // حساب نسبة الكفاءة بناءً على أيام العمل الفعلية بدلاً من أيام الحضور
-        const rate = adherenceStats.netWorkDays > 0 ? Math.round((completed / adherenceStats.netWorkDays) * 100) : 0;
+        const rate = individualAdherence.netWorkDays > 0 ? Math.round((completed / individualAdherence.netWorkDays) * 100) : 0;
 
         return { 
           taskId: task.id, 
@@ -133,31 +133,53 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
           category: task.category
         };
     }).sort((a, b) => b.rate - a.rate);
-  }, [empLogs, assignments, tasks, selectedEmpId, adherenceStats.netWorkDays]);
+  }, [filteredLogs, assignments, tasks, selectedEmpId, individualAdherence.netWorkDays]);
 
   const comparisonData = useMemo(() => {
-    return employees.map(emp => {
-      const empOwnLogs = filteredLogs.filter(l => l.employeeId === emp.id && !isLeaveStatus(l.status));
-      const uniqueDays = new Set(empOwnLogs.map(l => new Date(l.logDate).toLocaleDateString('en-CA'))).size;
-      const completed = empOwnLogs.filter(l => isCompletedStatus(l.status)).length;
-      const total = empOwnLogs.length;
-      const rate = total > 0 ? (completed / total) * 100 : 0;
-      return { id: emp.id, name: emp.name, completed, rate, daysPresent: uniqueDays };
-    }).sort((a, b) => b.rate - a.rate);
-  }, [employees, filteredLogs]);
+    return employees
+      .filter(e => selectedComparisonIds.includes(e.id))
+      .map(emp => {
+        const stats = adherenceStatsForEmp(emp.id);
+        const empOwnLogs = filteredLogs.filter(l => l.employeeId === emp.id);
+        
+        const completed = empOwnLogs.filter(l => isCompletedStatus(l.status)).length;
+        const pending = empOwnLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
+        const na = empOwnLogs.filter(l => isNotApplicableStatus(l.status)).length;
+        
+        // النسبة بناءً على الأيام التي كان يجب أن يتواجد فيها
+        const rate = stats.netWorkDays > 0 ? (completed / stats.netWorkDays) * 100 : 0;
+        
+        return { 
+            id: emp.id, 
+            name: emp.name, 
+            completed, 
+            pending, 
+            na, 
+            rate, 
+            netWorkDays: stats.netWorkDays,
+            daysPresent: stats.presentDays 
+        };
+      }).sort((a, b) => b.rate - a.rate);
+  }, [employees, filteredLogs, selectedComparisonIds, startDate, endDate]);
+
+  const toggleEmpSelection = (id: string) => {
+    setSelectedComparisonIds(prev => 
+        prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
 
   const exportToCSV = () => {
     const BOM = "\uFEFF";
     let csvContent = BOM;
     if (viewMode === 'individual' && selectedEmployee) {
         csvContent += "التاريخ,الموظف,المهمة,الحالة\n";
-        empLogs.forEach(log => {
+        filteredLogs.filter(l => l.employeeId === selectedEmpId).forEach(log => {
           csvContent += `"${new Date(log.logDate).toLocaleDateString('ar-EG')}","${selectedEmployee.name}","${log.description}","${log.status}"\n`;
         });
     } else {
-        csvContent += "الترتيب,الموظف,الأيام,المنفذة,النسبة\n";
+        csvContent += "الترتيب,الموظف,أيام العمل,المنفذة,غير المنفذة,لا تنطبق,النسبة\n";
         comparisonData.forEach((d, idx) => {
-            csvContent += `"${idx + 1}","${d.name}","${d.daysPresent}","${d.completed}","${d.rate.toFixed(1)}%"\n`;
+            csvContent += `"${idx + 1}","${d.name}","${d.netWorkDays}","${d.completed}","${d.pending}","${d.na}","${d.rate.toFixed(1)}%"\n`;
         });
     }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -183,12 +205,40 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
-             {viewMode === 'individual' && (
+             {viewMode === 'individual' ? (
                 <div className="space-y-2">
                     <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">الموظف</label>
                     <select value={selectedEmpId} onChange={(e) => setSelectedEmpId(e.target.value)} className="w-full bg-gray-50 border border-gray-200 text-sm font-bold rounded-xl block pr-4 pl-4 py-3.5 appearance-none cursor-pointer">
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
+                </div>
+             ) : (
+                <div className="space-y-2 lg:col-span-1">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">اختيار الموظفين للمقارنة</label>
+                    <div className="relative group">
+                        <div className="w-full bg-gray-50 border border-gray-200 text-xs font-bold rounded-xl px-4 py-3.5 flex items-center justify-between cursor-pointer hover:bg-white transition-colors">
+                            <span>{selectedComparisonIds.length} موظف محدد</span>
+                            <Filter size={14} className="text-gray-400" />
+                        </div>
+                        <div className="absolute top-full right-0 w-64 bg-white border border-gray-200 rounded-2xl mt-2 shadow-2xl p-4 hidden group-hover:block z-50 animate-fade-in">
+                            <div className="flex items-center gap-2 mb-3 px-2 border-b border-gray-100 pb-2">
+                                <Search size={14} className="text-gray-400" />
+                                <input type="text" placeholder="بحث..." value={empSearch} onChange={e => setEmpSearch(e.target.value)} className="w-full text-xs outline-none font-medium" />
+                            </div>
+                            <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar">
+                                {employees.filter(e => e.name.includes(empSearch)).map(e => (
+                                    <label key={e.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                                        <input type="checkbox" checked={selectedComparisonIds.includes(e.id)} onChange={() => toggleEmpSelection(e.id)} className="rounded text-indigo-600" />
+                                        <span className="text-xs font-bold text-gray-700">{e.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between">
+                                <button onClick={() => setSelectedComparisonIds(employees.map(e => e.id))} className="text-[10px] font-black text-indigo-600 hover:underline">تحديد الكل</button>
+                                <button onClick={() => setSelectedComparisonIds([])} className="text-[10px] font-black text-red-500 hover:underline">إلغاء الكل</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
              )}
              <div className="space-y-2">
@@ -237,10 +287,10 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                 <div>
                     <div className="flex items-center gap-3 mb-6"><div className="w-2 h-8 bg-blue-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">مؤشرات الحضور والالتزام</h4></div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                        <AnalyticCard label="أيام العمل الفعلية" value={adherenceStats.netWorkDays} icon={<Briefcase size={22}/>} color="blue" />
-                        <AnalyticCard label="التقارير المرفوعة" value={adherenceStats.presentDays} icon={<Activity size={22}/>} color="green" />
-                        <AnalyticCard label="إجمالي الإجازات" value={adherenceStats.totalLeaves} icon={<Clock size={22}/>} color="orange" tooltip="تشمل الخميس والجمعة تلقائياً" />
-                        <StatCardPercentage label="نسبة الالتزام" value={adherenceStats.attendanceRate} />
+                        <AnalyticCard label="أيام العمل الفعلية" value={individualAdherence.netWorkDays} icon={<Briefcase size={22}/>} color="blue" />
+                        <AnalyticCard label="التقارير المرفوعة" value={individualAdherence.presentDays} icon={<Activity size={22}/>} color="green" />
+                        <AnalyticCard label="إجمالي الإجازات" value={individualAdherence.totalLeaves} icon={<Clock size={22}/>} color="orange" tooltip="تشمل الخميس والجمعة تلقائياً" />
+                        <StatCardPercentage label="نسبة الالتزام" value={individualAdherence.attendanceRate} />
                     </div>
                 </div>
 
@@ -256,37 +306,82 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
             </div>
         ) : (
             <div className="space-y-12 relative z-10">
-                <div className="flex items-center gap-3 mb-2"><div className="w-2 h-8 bg-indigo-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">لوحة الصدارة والتميز</h4></div>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3"><div className="w-2 h-8 bg-indigo-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">لوحة الصدارة والتميز البياني</h4></div>
+                    <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 font-black text-xs"><BarChart2 size={16} /> رسم بياني حي</div>
+                </div>
+                
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
                     <div className="xl:col-span-4 space-y-4">
+                        <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">أفضل 5 موظفين أداءً</h5>
                         {comparisonData.slice(0, 5).map((data, idx) => (
-                            <div key={data.id} className="bg-white border border-gray-100 p-6 rounded-[2rem] shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all">
+                            <div key={data.id} className="bg-white border border-gray-100 p-6 rounded-[2rem] shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all hover:-translate-y-1">
                                 <div className={`w-12 h-12 flex items-center justify-center rounded-2xl font-black text-xl shadow-inner ${idx === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>{idx + 1}</div>
                                 <div className="flex-1">
                                     <h5 className="font-black text-gray-800 text-lg group-hover:text-indigo-600 transition-colors">{data.name}</h5>
-                                    <p className="text-[10px] font-black text-gray-400 uppercase mt-1">الكفاءة: {data.rate.toFixed(1)}%</p>
+                                    <div className="flex items-center gap-3 mt-1">
+                                        <p className="text-[10px] font-black text-indigo-500 uppercase">الكفاءة: {data.rate.toFixed(1)}%</p>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase">التقارير: {data.completed}</p>
+                                    </div>
                                 </div>
                                 {idx === 0 && <Star className="text-amber-500 animate-pulse" fill="currentColor" size={24} />}
                             </div>
                         ))}
                     </div>
-                    <div className="xl:col-span-8 bg-gray-50 rounded-[3rem] p-8 border border-gray-100 shadow-inner overflow-hidden">
-                        <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white">
+                    
+                    <div className="xl:col-span-8 space-y-8">
+                        {/* Interactive Bar Chart for Comparison */}
+                        <div className="bg-gray-50 rounded-[3rem] p-8 border border-gray-100 shadow-inner">
+                            <h5 className="text-sm font-black text-gray-700 mb-8 flex items-center gap-2"><Zap size={16} className="text-amber-500" /> تحليل مقارنة نسب الإنجاز</h5>
+                            <div className="space-y-6">
+                                {comparisonData.slice(0, 8).map((data) => (
+                                    <div key={data.id} className="group">
+                                        <div className="flex justify-between items-center mb-2 px-1">
+                                            <span className="text-xs font-black text-gray-700">{data.name}</span>
+                                            <span className="text-xs font-black text-indigo-600">{data.rate.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="h-4 w-full bg-white rounded-full overflow-hidden border border-gray-200 shadow-inner flex">
+                                            <div 
+                                                className={`h-full transition-all duration-1000 ease-out relative ${data.rate >= 90 ? 'bg-emerald-500' : data.rate >= 70 ? 'bg-indigo-500' : 'bg-amber-500'}`} 
+                                                style={{ width: `${data.rate}%` }}
+                                            >
+                                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Detailed Table */}
+                        <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-lg">
                             <table className="w-full text-right text-sm">
                                 <thead className="bg-gray-900 text-white font-black">
-                                    <tr><th className="px-6 py-5">الموظف</th><th className="px-6 py-5 text-center">أيام التواجد</th><th className="px-6 py-5 text-center">المنفذة</th><th className="px-6 py-5 text-center">نسبة الكفاءة</th></tr>
+                                    <tr>
+                                        <th className="px-6 py-5">الموظف</th>
+                                        <th className="px-6 py-5 text-center">أيام العمل</th>
+                                        <th className="px-6 py-5 text-center">منفذة</th>
+                                        <th className="px-6 py-5 text-center">غير منفذة</th>
+                                        <th className="px-6 py-5 text-center">لا تنطبق</th>
+                                        <th className="px-6 py-5 text-center">نسبة الكفاءة</th>
+                                    </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {comparisonData.map((data) => (
                                         <tr key={data.id} className="hover:bg-indigo-50/50 transition-colors">
                                             <td className="px-6 py-5 font-black text-gray-800">{data.name}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-blue-600">{data.daysPresent}</td>
+                                            <td className="px-6 py-5 text-center font-bold text-gray-500">{data.netWorkDays}</td>
                                             <td className="px-6 py-5 text-center font-bold text-emerald-600">{data.completed}</td>
+                                            <td className="px-6 py-5 text-center font-bold text-red-500">{data.pending}</td>
+                                            <td className="px-6 py-5 text-center font-bold text-gray-400">{data.na}</td>
                                             <td className="px-6 py-5 text-center">
                                                 <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-xl font-black text-xs">{data.rate.toFixed(1)}%</div>
                                             </td>
                                         </tr>
                                     ))}
+                                    {comparisonData.length === 0 && (
+                                        <tr><td colSpan={6} className="p-20 text-center text-gray-400 font-bold">يرجى تحديد موظف واحد على الأقل للعرض</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
