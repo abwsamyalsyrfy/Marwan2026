@@ -6,7 +6,7 @@ import {
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -28,7 +28,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 }) => {
   const isAdmin = currentUser.role === 'Admin';
   
-  // AI Insight State
   const [insights, setInsights] = useState<TeamInsight | null>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
 
@@ -46,26 +45,18 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     setLoadingInsights(true);
     try {
       const data = await getTeamPerformanceInsights(logs, employees);
-      const insightWithTime: TeamInsight = {
-        ...data,
-        generatedAt: new Date().toISOString()
-      };
+      const insightWithTime: TeamInsight = { ...data, generatedAt: new Date().toISOString() };
       await db.insights.save(insightWithTime);
       setInsights(insightWithTime);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingInsights(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoadingInsights(false); }
   };
 
-  // --- Helpers for Precise Stats ---
   const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة'].includes(status);
   const isCompletedStatus = (status: string) => ['Completed', 'منفذة'].includes(status);
   const isWeekend = (dateStr: string) => {
     const d = new Date(dateStr);
     const day = d.getDay();
-    return day === 4 || day === 5; // Thursday and Friday
+    return day === 4 || day === 5;
   };
 
   const stats = useMemo(() => {
@@ -94,8 +85,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
+          const d = new Date(); d.setDate(d.getDate() - i);
           const dateStr = d.toISOString().split('T')[0];
           const dayLogs = logs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
@@ -132,7 +122,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
       const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : 0;
 
-      // حساب عدد أيام العمل الموثقة بدقة (أيام المهام الروتينية باستثناء الإجازات والخميس/الجمعة)
       const reportingDays = new Set(
         myLogs
           .filter(l => {
@@ -142,10 +131,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           .map(l => l.logDate.split('T')[0])
       ).size;
 
+      // حساب المرفوضات والمعلقات
+      const myRejectedLogs = myLogs.filter(l => l.approvalStatus === 'Rejected');
+      const myPendingLogs = myLogs.filter(l => l.approvalStatus === 'PendingApproval');
+
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
+          const d = new Date(); d.setDate(d.getDate() - i);
           const dateStr = d.toISOString().split('T')[0];
           const dayLogs = myLogs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
@@ -163,7 +155,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         progressToday,
         completedToday,
         reportingDays,
-        chartData
+        chartData,
+        myRejectedLogs: myRejectedLogs.slice(0, 5), // عرض آخر 5 مرفوضات
+        myPendingCount: myPendingLogs.length
       };
     }
   }, [logs, currentUser.id, isAdmin, assignments, employees]);
@@ -187,7 +181,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           <p className="text-gray-500 mt-2 font-medium">
             {isAdmin 
               ? `يوجد ${stats.pendingApprovalsCount} سجل بانتظار مراجعتك حالياً.` 
-              : `لقد أنجزت ${stats.completedToday} مهمة روتينية اليوم.`}
+              : `لديك ${stats.myPendingCount} سجل قيد الانتظار حالياً.`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -199,6 +193,29 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* تنبيه المرفوضات للموظف - يظهر في أعلى اللوحة */}
+      {!isAdmin && stats.myRejectedLogs && stats.myRejectedLogs.length > 0 && (
+        <div className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm animate-fade-in">
+          <div className="flex items-center gap-3 mb-4 text-red-700">
+            <AlertCircle size={24} />
+            <h3 className="font-black text-lg">سجلات مرفوضة تتطلب تعديل</h3>
+          </div>
+          <div className="space-y-3">
+            {stats.myRejectedLogs.map(log => (
+              <div key={log.id} className="bg-white p-4 rounded-xl border border-red-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-gray-800">{log.description}</p>
+                  <p className="text-xs text-red-600 mt-1 font-bold italic flex items-center gap-1">
+                    <MessageSquare size={12} /> ملاحظة المدير: {log.managerNote || 'لا توجد ملاحظات'}
+                  </p>
+                </div>
+                <div className="text-[10px] font-bold text-gray-400">تاريخ السجل: {new Date(log.logDate).toLocaleDateString('ar-EG')}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {isAdmin ? (
@@ -212,7 +229,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           <>
             <StatCard label="إنجازك اليوم" value={`${stats.todayRate}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
             <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<TrendingUp className="text-indigo-600" />} color="indigo" />
-            <StatCard label="إنجازك الشهري" value={`${stats.monthRate}%`} subLabel="خلال آخر 30 يوم" icon={<CalendarDays className="text-blue-600" />} color="blue" />
+            <StatCard label="تقارير قيد المراجعة" value={stats.myPendingCount} subLabel="بانتظار اعتماد المدير" icon={<Clock className="text-blue-600" />} color="blue" />
             <StatCard label="أيام العمل الموثقة" value={stats.reportingDays} subLabel="بدون الإجازات والخميس والجمعة" icon={<CalendarCheck className="text-emerald-600" />} color="emerald" />
           </>
         )}

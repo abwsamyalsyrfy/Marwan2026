@@ -247,7 +247,16 @@ service cloud.firestore {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-right print:block" dir="rtl">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout} missingLogsCount={missingLogsCount} isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        currentUser={currentUser} 
+        onLogout={handleLogout} 
+        missingLogsCount={missingLogsCount} 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)}
+        logs={logs}
+      />
       <div className="md:hidden bg-white p-4 shadow-sm flex justify-between items-center print:hidden">
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={24} /></button>
         <h1 className="text-lg font-bold text-gray-800">مُيسّر المهام</h1>
