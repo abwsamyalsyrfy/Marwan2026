@@ -94,6 +94,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
   const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة'].includes(status);
   const isCompletedStatus = (status: string) => ['Completed', 'منفذة'].includes(status);
+  const isNotApplicableStatus = (status: string) => ['NotApplicable', 'لا تنطبق'].includes(status);
   const isWeekend = (dateStr: string) => {
     const d = new Date(dateStr);
     const day = d.getDay();
@@ -117,14 +118,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     };
 
     const calcRate = (list: TaskLog[]) => {
-      const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
+      const relevant = list.filter(l => !isLeaveStatus(l.status));
       if (relevant.length === 0) return 0;
-      const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
-      return Math.round((completed / relevant.length) * 100);
+      const doneOrNA = relevant.filter(l => isCompletedStatus(l.status) || isNotApplicableStatus(l.status)).length;
+      return Math.round((doneOrNA / relevant.length) * 100);
     };
 
     const getStatusDistribution = (list: TaskLog[]) => {
-      const total = list.length || 1;
       return {
         completed: list.filter(l => isCompletedStatus(l.status)).length,
         pending: list.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length,
@@ -169,11 +169,10 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const myWeekLogs = getLogsInLastDays(myLogs, 7);
       const myMonthLogs = getLogsInLastDays(myLogs, 30);
 
-      const myAssignments = assignments.filter(a => a.employeeId === currentUser.id);
+      // دقة النسبة المئوية: نحسب إجمالي ما تم تسجيله مقارنة بما تم إنجازه أو استبعاده كـ "لا ينطبق"
+      const progressToday = myTodayLogs.length > 0 ? calcRate(myTodayLogs) : 0;
       const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
       
-      const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : (myTodayLogs.length > 0 ? 100 : 0);
-
       const reportingDays = new Set(
         myLogs
           .filter(l => {
@@ -200,7 +199,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
       return {
         isAdmin: false,
-        todayRate: calcRate(myTodayLogs),
+        todayRate: progressToday,
         weekRate: calcRate(myWeekLogs),
         monthRate: calcRate(myMonthLogs),
         progressToday, 
@@ -441,7 +440,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </>
         ) : (
           <>
-            <StatCard label="إنجازك اليوم" value={`${stats.todayRate}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
+            <StatCard label="إنجازك اليوم" value={`${stats.progressToday}%`} subLabel={`${stats.completedToday} مهمة مكتملة`} icon={<Zap className="text-amber-600" />} color="amber" />
             <StatCard label="إنجازك الأسبوعي" value={`${stats.weekRate}%`} subLabel="خلال آخر 7 أيام" icon={<TrendingUp className="text-indigo-600" />} color="indigo" />
             <StatCard label="تقارير قيد المراجعة" value={stats.myPendingCount} subLabel="بانتظار اعتماد المدير" icon={<Clock className="text-blue-600" />} color="blue" />
             <StatCard label="أيام العمل الموثقة" value={stats.reportingDays} subLabel="بدون الإجازات والخميس والجمعة" icon={<CalendarCheck className="text-emerald-600" />} color="emerald" />
@@ -450,7 +449,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* العمود الجانبي المطور (بدون رسوم دائرية) */}
         <div className="lg:col-span-4 flex flex-col gap-8">
             {isAdmin ? (
                 <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col relative overflow-hidden min-h-[400px]">
@@ -458,74 +456,32 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                   <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">توزيع حالات الفريق اليوم</h3>
                   
                   <div className="space-y-6 flex-1">
-                     <DistributionRow 
-                       label="مهام مكتملة" 
-                       count={stats.distribution.completed} 
-                       total={stats.distribution.total}
-                       icon={<CircleDot size={18} />} 
-                       color="bg-emerald-500" 
-                       textColor="text-emerald-600"
-                     />
-                     <DistributionRow 
-                       label="مهام قيد التنفيذ" 
-                       count={stats.distribution.pending} 
-                       total={stats.distribution.total}
-                       icon={<Clock size={18} />} 
-                       color="bg-amber-500" 
-                       textColor="text-amber-600"
-                     />
-                     <DistributionRow 
-                       label="مهام غير منطبقة" 
-                       count={stats.distribution.na} 
-                       total={stats.distribution.total}
-                       icon={<MinusCircle size={18} />} 
-                       color="bg-gray-400" 
-                       textColor="text-gray-500"
-                     />
+                     <DistributionRow label="مكتملة" count={stats.distribution.completed} total={stats.distribution.total} icon={<CircleDot size={18} />} color="bg-emerald-500" textColor="text-emerald-600" />
+                     <DistributionRow label="معلقة" count={stats.distribution.pending} total={stats.distribution.total} icon={<Clock size={18} />} color="bg-amber-500" textColor="text-amber-600" />
+                     <DistributionRow label="لا تنطبق" count={stats.distribution.na} total={stats.distribution.total} icon={<MinusCircle size={18} />} color="bg-gray-400" textColor="text-gray-500" />
                   </div>
 
                   <div className="mt-8 pt-8 border-t border-gray-50">
                     <button onClick={onRefresh} className="w-full py-3.5 bg-gray-50 text-indigo-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all border border-indigo-100 text-sm">
-                      <RefreshCw size={16} /> تحديث البيانات الحية
+                      <RefreshCw size={16} /> تحديث البيانات
                     </button>
                   </div>
                 </div>
             ) : (
                 <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col relative overflow-hidden min-h-[400px]">
                   <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={120} /></div>
-                  <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">حالة مهامك اليوم</h3>
+                  <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">اكتمال المهام اليومية</h3>
                   
-                  {/* استبدال الرسم الدائري بملخص شريطي وأرقام بارزة */}
-                  <div className="mb-10 p-6 bg-gray-50 rounded-[2rem] border border-gray-100 shadow-inner flex flex-col items-center">
-                    <span className="text-5xl font-black text-indigo-600 mb-2">{stats.progressToday}%</span>
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">إجمالي نسبة الإنجاز اليومي</span>
+                  {/* استبدال الرسم الدائري نهائياً بمؤشر رقمي ضخم وأنيق */}
+                  <div className="mb-10 p-10 bg-gradient-to-br from-indigo-50 to-white rounded-[3rem] border border-indigo-100 shadow-inner flex flex-col items-center justify-center text-center">
+                    <div className="text-6xl font-black text-indigo-600 mb-3 tracking-tighter">{stats.progressToday}%</div>
+                    <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] px-4 py-1.5 bg-white rounded-full shadow-sm border border-indigo-50">دقة الإنجاز الفعلي</div>
                   </div>
 
                   <div className="space-y-6 flex-1">
-                     <DistributionRow 
-                       label="المهام المنفذة" 
-                       count={stats.distribution.completed} 
-                       total={stats.distribution.total}
-                       icon={<CircleDot size={18} />} 
-                       color="bg-emerald-500" 
-                       textColor="text-emerald-600"
-                     />
-                     <DistributionRow 
-                       label="المهام المعلقة" 
-                       count={stats.distribution.pending} 
-                       total={stats.distribution.total}
-                       icon={<Clock size={18} />} 
-                       color="bg-red-500" 
-                       textColor="text-red-600"
-                     />
-                     <DistributionRow 
-                       label="مهام غير منطبقة" 
-                       count={stats.distribution.na} 
-                       total={stats.distribution.total}
-                       icon={<MinusCircle size={18} />} 
-                       color="bg-gray-400" 
-                       textColor="text-gray-500"
-                     />
+                     <DistributionRow label="المنفذة" count={stats.distribution.completed} total={stats.distribution.total} icon={<CircleDot size={18} />} color="bg-emerald-500" textColor="text-emerald-600" />
+                     <DistributionRow label="المعلقة" count={stats.distribution.pending} total={stats.distribution.total} icon={<Clock size={18} />} color="bg-red-500" textColor="text-red-600" />
+                     <DistributionRow label="لا تنطبق" count={stats.distribution.na} total={stats.distribution.total} icon={<MinusCircle size={18} />} color="bg-gray-400" textColor="text-gray-500" />
                   </div>
 
                   <div className="mt-8 pt-8 border-t border-gray-50">
@@ -537,7 +493,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
             )}
         </div>
 
-        {/* الرسم البياني للأداء الأسبوعي */}
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col">
           <div className="flex justify-between items-center mb-10">
             <div>
@@ -545,7 +500,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                 <BarChart3 className="text-indigo-600" size={24} />
                 {isAdmin ? 'مؤشرات أداء الفريق' : 'سجل التزامك الشخصي'}
               </h3>
-              <p className="text-sm text-gray-400 mt-1">رسم بياني يوضح حجم المهام المنجزة يومياً</p>
+              <p className="text-sm text-gray-400 mt-1">تطور الإنجاز خلال الـ 7 أيام الماضية</p>
             </div>
             <div className="flex gap-4 p-1.5 bg-gray-50 rounded-xl">
                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-lg shadow-sm">
@@ -673,7 +628,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   );
 };
 
-// مكونات فرعية محسنة
 const DistributionRow = ({ label, count, total, icon, color, textColor }: { label: string, count: number, total: number, icon: React.ReactNode, color: string, textColor: string }) => {
   const percentage = total > 0 ? (count / total) * 100 : 0;
   return (
