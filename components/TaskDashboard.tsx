@@ -108,6 +108,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     } catch (e) { console.error(e); }
   };
 
+  const handleArchiveAnnouncement = async (annId: string) => {
+    if (!window.confirm("هل تريد أرشفة هذا التعميم وإخفاءه من الواجهة الرئيسية لجميع المستخدمين؟")) return;
+    try {
+      await db.announcements.archive(annId);
+      onRefresh();
+    } catch (e) { console.error(e); }
+  };
+
   const handleReply = async (annId: string) => {
     const content = replyInputs[annId];
     if (!content?.trim()) return;
@@ -145,8 +153,11 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   };
 
   const relevantAnnouncements = useMemo(() => {
-    if (isAdmin) return announcements;
-    return announcements.filter(ann => 
+    // عرض التعميمات غير المؤرشفة فقط
+    const activeAnnouncements = announcements.filter(ann => !ann.archived);
+    
+    if (isAdmin) return activeAnnouncements;
+    return activeAnnouncements.filter(ann => 
       ann.targetType === 'All' || (ann.targetEmployeeIds && ann.targetEmployeeIds.includes(currentUser.id))
     );
   }, [announcements, currentUser.id, isAdmin]);
@@ -443,6 +454,17 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                              <MessageSquare size={16} />
                              {repliesCount > 0 ? `${repliesCount} ردود` : 'إضافة رد'}
                            </button>
+
+                           {isAdmin && (
+                             <button 
+                               onClick={() => handleArchiveAnnouncement(ann.id)}
+                               className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all bg-gray-50 text-gray-500 hover:bg-amber-50 hover:text-amber-600"
+                               title="أرشفة وإخفاء من الجميع"
+                             >
+                               <EyeOff size={16} />
+                               أرشفة
+                             </button>
+                           )}
 
                            <div className="flex-1"></div>
                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">صادر عن: {ann.createdBy}</span>

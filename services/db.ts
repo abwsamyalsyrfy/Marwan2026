@@ -190,6 +190,17 @@ export const db = {
         await deleteDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, id));
       } catch (e) { handleDbError(e); }
     },
+    archive: async (id: string): Promise<void> => {
+      if (!isCloudEnabled()) {
+        const data = localDb.get<Announcement>(COLLECTIONS.ANNOUNCEMENTS);
+        localDb.set(COLLECTIONS.ANNOUNCEMENTS, data.map(a => a.id === id ? { ...a, archived: true } : a));
+        return;
+      }
+      try {
+        const annRef = doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, id);
+        await updateDoc(annRef, { archived: true });
+      } catch (e) { handleDbError(e); }
+    },
     toggleLike: async (announcementId: string, employeeId: string, hasLiked: boolean): Promise<void> => {
       if (!isCloudEnabled()) return;
       try {

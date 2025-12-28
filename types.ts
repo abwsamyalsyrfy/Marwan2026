@@ -57,6 +57,7 @@ export interface Announcement {
   targetEmployeeIds?: string[];
   likes?: string[]; // Array of employee IDs who liked
   replies?: AnnouncementReply[];
+  archived?: boolean; // New: To hide from main dashboard
 }
 
 export interface SystemAuditLog {
