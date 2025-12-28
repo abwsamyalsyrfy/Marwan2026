@@ -7,7 +7,7 @@ import {
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
   LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff, ShieldAlert,
-  CircleDot, XCircle, MinusCircle
+  CircleDot, XCircle, MinusCircle, User, Activity, CheckSquare
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -37,6 +37,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const [showReplies, setShowReplies] = useState<Record<string, boolean>>({});
   const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
   const [committingIds, setCommittingIds] = useState<string[]>([]);
+  const [processingLogIds, setProcessingLogIds] = useState<string[]>([]);
 
   useEffect(() => {
     const loadCached = async () => {
@@ -56,6 +57,23 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       await db.insights.save(insightWithTime);
       setInsights(insightWithTime);
     } catch (e) { console.error(e); } finally { setLoadingInsights(false); }
+  };
+
+  const handleQuickApprove = async (logId: string) => {
+    if (!onApproveLog) return;
+    setProcessingLogIds(prev => [...prev, logId]);
+    await onApproveLog(logId);
+    setProcessingLogIds(prev => prev.filter(id => id !== logId));
+  };
+
+  const handleQuickReject = async (logId: string) => {
+    if (!onRejectLog) return;
+    const reason = window.prompt("سبب الرفض:");
+    if (reason !== null) {
+      setProcessingLogIds(prev => [...prev, logId]);
+      await onRejectLog(logId, reason || "تم الرفض من اللوحة السريعة");
+      setProcessingLogIds(prev => prev.filter(id => id !== logId));
+    }
   };
 
   const handleLike = async (annId: string, hasLiked: boolean) => {
@@ -138,7 +156,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const weekLogs = getLogsInLastDays(logs, 7);
       
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
-      const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending');
+      const pendingApprovalsList = logs
+        .filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending')
+        .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime()); // فرز بالأحدث
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
@@ -152,6 +172,10 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           });
       }
 
+      const recentTeamLogs = [...logs]
+        .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime())
+        .slice(0, 6);
+
       return {
         isAdmin: true,
         todayRate: calcRate(todayLogs),
@@ -159,7 +183,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         activeStaffToday,
         totalStaff: employees.length,
         pendingApprovalsCount: pendingApprovalsList.length,
-        pendingApprovalsList: pendingApprovalsList.slice(0, 10),
+        pendingApprovalsList: pendingApprovalsList.slice(0, 6), 
+        recentTeamLogs,
         chartData,
         distribution: getStatusDistribution(todayLogs)
       };
@@ -169,7 +194,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const myWeekLogs = getLogsInLastDays(myLogs, 7);
       const myMonthLogs = getLogsInLastDays(myLogs, 30);
 
-      // دقة النسبة المئوية: نحسب إجمالي ما تم تسجيله مقارنة بما تم إنجازه أو استبعاده كـ "لا ينطبق"
       const progressToday = myTodayLogs.length > 0 ? calcRate(myTodayLogs) : 0;
       const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
       
@@ -226,8 +250,19 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     setDismissedRejectedIds(prev => [...prev, id]);
   };
 
+  const getTimeAgo = (dateStr: string) => {
+    const diff = new Date().getTime() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60)
+    if (hrs > 24) return new Date(dateStr).toLocaleDateString('ar-EG');
+    if (hrs > 0) return `قبل ${hrs} ساعة`;
+    if (mins > 0) return `قبل ${mins} دقيقة`;
+    return 'الآن';
+  };
+
   return (
     <div className="space-y-8 animate-fade-in pb-12">
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-3">
@@ -244,7 +279,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </h1>
           <p className="text-gray-500 mt-2 font-medium">
             {isAdmin 
-              ? `يوجد ${stats.pendingApprovalsCount} سجل بانتظار مراجعتك حالياً.` 
+              ? `يوجد ${stats.pendingApprovalsCount || 0} سجل بانتظار مراجعتك حالياً.` 
               : `لديك ${stats.myPendingCount} سجل قيد الانتظار حالياً.`}
           </p>
         </div>
@@ -258,6 +293,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
+      {/* Announcements */}
       {relevantAnnouncements && relevantAnnouncements.length > 0 && (
         <div className="space-y-4">
            {relevantAnnouncements.slice(0, 5).map(ann => {
@@ -354,6 +390,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       )}
 
+      {/* Rejected Logs for Users */}
       {!isAdmin && visibleRejectedLogs && visibleRejectedLogs.length > 0 && (
         <div className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm animate-fade-in space-y-4">
           <div className="flex items-center justify-between">
@@ -430,13 +467,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       )}
 
+      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {isAdmin ? (
           <>
             <StatCard label="إنجاز الفريق اليوم" value={`${stats.todayRate}%`} subLabel="معدل تنفيذ المهام اليومي" icon={<Target className="text-blue-600" />} color="blue" />
             <StatCard label="التزام الأسبوع" value={`${stats.weekRate}%`} subLabel="أداء الفريق خلال 7 أيام" icon={<CalendarCheck className="text-indigo-600" />} color="indigo" />
             <StatCard label="الموظفين النشطين" value={`${stats.activeStaffToday}/${stats.totalStaff}`} subLabel="من سجلوا تقاريرهم اليوم" icon={<Users className="text-emerald-600" />} color="emerald" />
-            <StatCard label="طلبات المراجعة" value={stats.pendingApprovalsCount} subLabel="بانتظار الاعتماد" icon={<Clock className="text-amber-600" />} color="amber" />
+            <StatCard label="طلبات المراجعة" value={stats.pendingApprovalsCount || 0} subLabel="بانتظار الاعتماد" icon={<Clock className="text-amber-600" />} color="amber" />
           </>
         ) : (
           <>
@@ -448,6 +486,93 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         )}
       </div>
 
+      {/* Quick Review Box for Admin (Optimized) */}
+      {isAdmin && stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 && (
+        <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 animate-slide-up relative overflow-hidden group/box">
+           <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none group-hover/box:opacity-[0.06] transition-opacity"><CheckSquare size={160} /></div>
+           <div className="flex items-center justify-between mb-8 relative z-10">
+              <div className="flex items-center gap-4">
+                 <div className="p-3.5 bg-amber-50 text-amber-600 rounded-2xl shadow-inner border border-amber-100">
+                    <CheckSquare size={26} />
+                 </div>
+                 <div>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">قائمة المراجعة والمصادقة الفورية</h3>
+                    <p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-[0.2em]">تحقق من أحدث السجلات المرفوعة</p>
+                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black px-5 py-2.5 bg-amber-500 text-white rounded-full shadow-lg shadow-amber-100 uppercase tracking-widest">{stats.pendingApprovalsCount} مهام معلقة</span>
+              </div>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+              {stats.pendingApprovalsList.map((log) => {
+                const emp = employees.find(e => e.id === log.employeeId);
+                const isProcessing = processingLogIds.includes(log.id);
+                const isCommitment = log.approvalStatus === 'CommitmentPending';
+
+                return (
+                  <div key={log.id} className={`p-6 rounded-[2.2rem] border transition-all group shadow-sm flex flex-col justify-between hover:shadow-xl hover:-translate-y-1 ${isCommitment ? 'bg-gradient-to-br from-amber-50 to-white border-amber-200' : 'bg-gray-50 border-gray-100 hover:border-indigo-200 hover:bg-white'}`}>
+                     <div>
+                        <div className="flex items-start gap-4 mb-5">
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg ${isCommitment ? 'bg-amber-600' : 'bg-indigo-600'}`}>
+                              {emp ? emp.name.charAt(0) : <User size={22} />}
+                            </div>
+                            <div className="flex-1">
+                              <h5 className="text-base font-black text-gray-900 group-hover:text-indigo-600 transition-colors leading-tight">{emp ? emp.name : log.employeeId}</h5>
+                              <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-tighter">{emp?.jobTitle || 'موظف'}</p>
+                              <div className="flex items-center gap-1.5 mt-2">
+                                <Clock size={10} className="text-gray-300" />
+                                <span className="text-[10px] text-gray-400 font-bold">{getTimeAgo(log.logDate)}</span>
+                              </div>
+                            </div>
+                        </div>
+                        <p className="text-xs font-bold text-gray-600 leading-relaxed mb-6 line-clamp-3 min-h-[3rem] group-hover:text-gray-800 transition-colors">
+                            {log.description}
+                        </p>
+                     </div>
+
+                     <div className="flex items-center justify-between border-t border-gray-100/60 pt-5 mt-auto">
+                        <span className={`text-[9px] font-black px-3 py-1.5 rounded-xl border ${isCommitment ? 'bg-amber-500 text-white border-amber-400' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
+                           {isCommitment ? 'طلب التزام' : 'مراجعة روتينية'}
+                        </span>
+                        
+                        <div className="flex gap-3">
+                           <button 
+                             onClick={() => handleQuickReject(log.id)}
+                             disabled={isProcessing}
+                             className="p-2.5 bg-white text-red-500 rounded-xl border border-red-100 hover:bg-red-500 hover:text-white transition-all shadow-sm disabled:opacity-50 active:scale-90"
+                             title="رفض"
+                           >
+                             <X size={18} />
+                           </button>
+                           <button 
+                             onClick={() => handleQuickApprove(log.id)}
+                             disabled={isProcessing}
+                             className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-800 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 active:scale-90"
+                             title="اعتماد"
+                           >
+                             {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+                );
+              })}
+           </div>
+           
+           {stats.pendingApprovalsCount > 6 && (
+             <div className="mt-10 text-center border-t border-gray-50 pt-8">
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em] flex items-center justify-center gap-2">
+                   <AlertCircle size={14} className="text-amber-400" />
+                   يوجد {stats.pendingApprovalsCount - 6} سجلات إضافية بانتظارك في صفحة الإدارة
+                </p>
+             </div>
+           )}
+        </div>
+      )}
+
+      {/* Main Grid: Pulse & Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 flex flex-col gap-8">
             {isAdmin ? (
@@ -472,7 +597,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                   <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={120} /></div>
                   <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">اكتمال المهام اليومية</h3>
                   
-                  {/* استبدال الرسم الدائري نهائياً بمؤشر رقمي ضخم وأنيق */}
                   <div className="mb-10 p-10 bg-gradient-to-br from-indigo-50 to-white rounded-[3rem] border border-indigo-100 shadow-inner flex flex-col items-center justify-center text-center">
                     <div className="text-6xl font-black text-indigo-600 mb-3 tracking-tighter">{stats.progressToday}%</div>
                     <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] px-4 py-1.5 bg-white rounded-full shadow-sm border border-indigo-50">دقة الإنجاز الفعلي</div>
@@ -536,6 +660,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
+      {/* AI Strategic Insights */}
       {isAdmin && (
         <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-indigo-500/20 group">
            <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity duration-1000"><Sparkles size={200} /></div>
