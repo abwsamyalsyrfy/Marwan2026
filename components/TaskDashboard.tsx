@@ -6,7 +6,8 @@ import {
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff, ShieldAlert
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff, ShieldAlert,
+  CircleDot, XCircle, MinusCircle
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -107,7 +108,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   }, [announcements, currentUser.id, isAdmin]);
 
   const stats = useMemo(() => {
-    // استخدام التوقيت المحلي بدلاً من ISO لتجنب مشاكل المناطق الزمنية
     const todayStr = new Date().toLocaleDateString('en-CA'); 
     
     const getLogsInLastDays = (logList: TaskLog[], days: number) => {
@@ -123,15 +123,22 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       return Math.round((completed / relevant.length) * 100);
     };
 
+    const getStatusDistribution = (list: TaskLog[]) => {
+      const total = list.length || 1;
+      return {
+        completed: list.filter(l => isCompletedStatus(l.status)).length,
+        pending: list.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length,
+        na: list.filter(l => l.status === 'NotApplicable' || l.status === 'لا تنطبق').length,
+        total: list.length
+      };
+    };
+
     if (isAdmin) {
       const todayLogs = logs.filter(l => l.logDate.startsWith(todayStr));
       const weekLogs = getLogsInLastDays(logs, 7);
       
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
       const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending');
-
-      // حساب متوسط إنجاز الفريق اليوم للرسم الدائري
-      const teamProgressToday = calcRate(todayLogs);
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
@@ -147,14 +154,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
       return {
         isAdmin: true,
-        todayRate: teamProgressToday,
+        todayRate: calcRate(todayLogs),
         weekRate: calcRate(weekLogs),
         activeStaffToday,
         totalStaff: employees.length,
         pendingApprovalsCount: pendingApprovalsList.length,
         pendingApprovalsList: pendingApprovalsList.slice(0, 10),
         chartData,
-        progressToday: teamProgressToday // للمدير: متوسط الفريق
+        distribution: getStatusDistribution(todayLogs)
       };
     } else {
       const myLogs = logs.filter(l => l.employeeId === currentUser.id);
@@ -165,7 +172,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const myAssignments = assignments.filter(a => a.employeeId === currentUser.id);
       const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
       
-      // النسبة تعتمد على المهام الروتينية المسندة لليوم
       const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : (myTodayLogs.length > 0 ? 100 : 0);
 
       const reportingDays = new Set(
@@ -197,12 +203,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         todayRate: calcRate(myTodayLogs),
         weekRate: calcRate(myWeekLogs),
         monthRate: calcRate(myMonthLogs),
-        progressToday, // للموظف: إنجازه الشخصي
+        progressToday, 
         completedToday,
         reportingDays,
         chartData,
-        myRejectedLogs: myRejectedLogs, 
-        myPendingCount: myPendingLogs.length
+        myRejectedLogs, 
+        myPendingCount: myPendingLogs.length,
+        distribution: getStatusDistribution(myTodayLogs)
       };
     }
   }, [logs, currentUser.id, isAdmin, assignments, employees]);
@@ -252,7 +259,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       </div>
 
-      {/* التعاميم النشطة */}
       {relevantAnnouncements && relevantAnnouncements.length > 0 && (
         <div className="space-y-4">
            {relevantAnnouncements.slice(0, 5).map(ann => {
@@ -307,7 +313,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">صادر عن: {ann.createdBy}</span>
                         </div>
 
-                        {/* قسم الردود */}
                         {showReplies[ann.id] && (
                           <div className="mt-4 space-y-4 animate-fade-in">
                             <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
@@ -445,39 +450,100 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* العمود الجانبي المطور (بدون رسوم دائرية) */}
         <div className="lg:col-span-4 flex flex-col gap-8">
-            <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[450px]">
-              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={180} /></div>
-              <h3 className="text-xl font-black text-gray-900 mb-8">{isAdmin ? 'إنتاجية الفريق اليوم' : 'إنجازك اليوم'}</h3>
-              <div className="relative w-48 h-48 mb-10 scale-110">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" className="text-gray-100" />
-                  <circle 
-                    cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" 
-                    strokeDasharray={540.35}
-                    strokeDashoffset={540.35 - (540.35 * (stats.progressToday)) / 100}
-                    strokeLinecap="round"
-                    className="text-indigo-600 transition-all duration-1000 ease-out"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-black text-gray-900">{stats.progressToday}%</span>
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">{isAdmin ? 'معدل إنجاز الفريق' : 'التقدم اليومي'}</span>
+            {isAdmin ? (
+                <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col relative overflow-hidden min-h-[400px]">
+                  <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><LayoutGrid size={120} /></div>
+                  <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">توزيع حالات الفريق اليوم</h3>
+                  
+                  <div className="space-y-6 flex-1">
+                     <DistributionRow 
+                       label="مهام مكتملة" 
+                       count={stats.distribution.completed} 
+                       total={stats.distribution.total}
+                       icon={<CircleDot size={18} />} 
+                       color="bg-emerald-500" 
+                       textColor="text-emerald-600"
+                     />
+                     <DistributionRow 
+                       label="مهام قيد التنفيذ" 
+                       count={stats.distribution.pending} 
+                       total={stats.distribution.total}
+                       icon={<Clock size={18} />} 
+                       color="bg-amber-500" 
+                       textColor="text-amber-600"
+                     />
+                     <DistributionRow 
+                       label="مهام غير منطبقة" 
+                       count={stats.distribution.na} 
+                       total={stats.distribution.total}
+                       icon={<MinusCircle size={18} />} 
+                       color="bg-gray-400" 
+                       textColor="text-gray-500"
+                     />
+                  </div>
+
+                  <div className="mt-8 pt-8 border-t border-gray-50">
+                    <button onClick={onRefresh} className="w-full py-3.5 bg-gray-50 text-indigo-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all border border-indigo-100 text-sm">
+                      <RefreshCw size={16} /> تحديث البيانات الحية
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <p className="text-sm text-gray-500 mb-8 font-medium">{isAdmin ? 'هذا المؤشر يعكس متوسط أداء كافة الموظفين اليوم' : 'الاستمرار في تسجيل المهام يرفع من نقاط تميزك'}</p>
-              <button onClick={onStartLogging} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
-                {isAdmin ? 'إضافة سجل يدوي' : 'سجل مهامك الآن'} <ChevronRight size={18} />
-              </button>
-            </div>
+            ) : (
+                <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col relative overflow-hidden min-h-[400px]">
+                  <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={120} /></div>
+                  <h3 className="text-lg font-black text-gray-900 mb-8 tracking-tight">حالة مهامك اليوم</h3>
+                  
+                  {/* استبدال الرسم الدائري بملخص شريطي وأرقام بارزة */}
+                  <div className="mb-10 p-6 bg-gray-50 rounded-[2rem] border border-gray-100 shadow-inner flex flex-col items-center">
+                    <span className="text-5xl font-black text-indigo-600 mb-2">{stats.progressToday}%</span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">إجمالي نسبة الإنجاز اليومي</span>
+                  </div>
+
+                  <div className="space-y-6 flex-1">
+                     <DistributionRow 
+                       label="المهام المنفذة" 
+                       count={stats.distribution.completed} 
+                       total={stats.distribution.total}
+                       icon={<CircleDot size={18} />} 
+                       color="bg-emerald-500" 
+                       textColor="text-emerald-600"
+                     />
+                     <DistributionRow 
+                       label="المهام المعلقة" 
+                       count={stats.distribution.pending} 
+                       total={stats.distribution.total}
+                       icon={<Clock size={18} />} 
+                       color="bg-red-500" 
+                       textColor="text-red-600"
+                     />
+                     <DistributionRow 
+                       label="مهام غير منطبقة" 
+                       count={stats.distribution.na} 
+                       total={stats.distribution.total}
+                       icon={<MinusCircle size={18} />} 
+                       color="bg-gray-400" 
+                       textColor="text-gray-500"
+                     />
+                  </div>
+
+                  <div className="mt-8 pt-8 border-t border-gray-50">
+                    <button onClick={onStartLogging} className="w-full py-3.5 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl text-sm">
+                      سجل مهامك الآن <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+            )}
         </div>
 
+        {/* الرسم البياني للأداء الأسبوعي */}
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col">
           <div className="flex justify-between items-center mb-10">
             <div>
               <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3">
                 <BarChart3 className="text-indigo-600" size={24} />
-                {isAdmin ? 'مؤشرات أداء الفريق الأسبوعية' : 'سجل التزامك الشخصي (7 أيام)'}
+                {isAdmin ? 'مؤشرات أداء الفريق' : 'سجل التزامك الشخصي'}
               </h3>
               <p className="text-sm text-gray-400 mt-1">رسم بياني يوضح حجم المهام المنجزة يومياً</p>
             </div>
@@ -592,52 +658,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       )}
 
-      {isAdmin && (
-        <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-100 border border-gray-100 p-6 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-              <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
-            </h3>
-            <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">{stats.pendingApprovalsCount} طلب</span>
-          </div>
-          <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
-            {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
-              const emp = employees.find(e => e.id === log.employeeId);
-              const isCommitment = log.approvalStatus === 'CommitmentPending';
-
-              return (
-                <div key={log.id} className={`p-4 rounded-2xl border transition-all duration-300 group ${isCommitment ? 'bg-indigo-50/50 border-indigo-200' : 'bg-gray-50 border-gray-200 hover:border-indigo-200 hover:bg-white'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                         <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
-                         {isCommitment && <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">التزام</span>}
-                      </div>
-                      <p className="text-[10px] text-gray-500 line-clamp-1">{log.description}</p>
-                    </div>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                      {log.taskType === 'Daily' ? 'روتين' : 'إضافي'}
-                    </span>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => onApproveLog?.(log.id)} className={`flex-1 py-1.5 text-white rounded-xl text-xs font-bold transition-colors shadow-sm ${isCommitment ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                      {isCommitment ? 'قبول الالتزام' : 'اعتماد'}
-                    </button>
-                    <button onClick={() => onRejectLog?.(log.id, 'رفض سريع')} className="px-3 py-1.5 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"><X size={14}/></button>
-                  </div>
-                </div>
-              );
-            }) : (
-              <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
-                <CheckCircle2 size={48} className="mb-2" />
-                <p className="text-sm font-bold">لا توجد سجلات معلقة</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -649,6 +669,25 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         }
         .animate-slide-up { animation: slide-up 0.5s ease-out forwards; }
       `}</style>
+    </div>
+  );
+};
+
+// مكونات فرعية محسنة
+const DistributionRow = ({ label, count, total, icon, color, textColor }: { label: string, count: number, total: number, icon: React.ReactNode, color: string, textColor: string }) => {
+  const percentage = total > 0 ? (count / total) * 100 : 0;
+  return (
+    <div className="space-y-2 group">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`${textColor}`}>{icon}</div>
+          <span className="text-xs font-bold text-gray-700">{label}</span>
+        </div>
+        <span className={`text-[10px] font-black ${textColor}`}>{count} مهام ({percentage.toFixed(0)}%)</span>
+      </div>
+      <div className="h-1.5 w-full bg-gray-50 rounded-full overflow-hidden border border-gray-100 shadow-inner">
+        <div className={`h-full ${color} transition-all duration-1000 ease-out`} style={{ width: `${percentage}%` }}></div>
+      </div>
     </div>
   );
 };
