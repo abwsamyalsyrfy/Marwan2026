@@ -8,11 +8,11 @@ import {
   doc, 
   deleteDoc, 
   writeBatch,
-  query,
-  limit,
-  orderBy,
-  updateDoc,
-  arrayUnion,
+  query, 
+  limit, 
+  orderBy, 
+  updateDoc, 
+  arrayUnion, 
   arrayRemove
 } from "firebase/firestore";
 
@@ -26,10 +26,51 @@ const COLLECTIONS = {
   ANNOUNCEMENTS: 'announcements'
 };
 
+/**
+ * وظيفة مساعدة لتحويل أي كائن إلى POJO (كائن بسيط) لتجنب أخطاء المراجع الدائرية
+ */
+const toPlainObject = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(toPlainObject);
+  
+  // تجنب تحويل الكائنات المعقدة مثل مراجع Firebase
+  try {
+    const plain: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        // نتجاهل الدوال والـ Symbols وأي مراجع قد تسبب مشاكل
+        if (typeof val !== 'function' && typeof val !== 'symbol') {
+          plain[key] = toPlainObject(val);
+        }
+      }
+    }
+    return plain;
+  } catch (e) {
+    return String(obj);
+  }
+};
+
 // --- محول التخزين المحلي ---
 const localDb = {
-  get: <T>(key: string): T[] => JSON.parse(localStorage.getItem(`taskease_${key}`) || '[]'),
-  set: (key: string, data: any) => localStorage.setItem(`taskease_${key}`, JSON.stringify(data)),
+  get: <T>(key: string): T[] => {
+    try {
+      const data = localStorage.getItem(`taskease_${key}`);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.error(`Error parsing localStorage key ${key}:`, e);
+      return [];
+    }
+  },
+  set: (key: string, data: any) => {
+    try {
+      // تحويل البيانات لكائن بسيط قبل الحفظ للتخلص من المراجع الدائرية
+      const sanitized = toPlainObject(data);
+      localStorage.setItem(`taskease_${key}`, JSON.stringify(sanitized));
+    } catch (e) {
+      console.error(`Circular structure or serialization error at key ${key}:`, e);
+    }
+  },
   clearAll: () => {
     Object.values(COLLECTIONS).forEach(key => localStorage.removeItem(`taskease_${key}`));
   }
@@ -66,25 +107,27 @@ export const db = {
       } catch (e) { return handleDbError(e); }
     },
     add: async (item: Employee): Promise<Employee> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Employee>(COLLECTIONS.EMPLOYEES);
-        localDb.set(COLLECTIONS.EMPLOYEES, [...data, item]);
-        return item;
+        localDb.set(COLLECTIONS.EMPLOYEES, [...data, cleanItem]);
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.EMPLOYEES, item.id), item);
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.EMPLOYEES, cleanItem.id), cleanItem);
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     update: async (item: Employee): Promise<Employee> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Employee>(COLLECTIONS.EMPLOYEES);
-        localDb.set(COLLECTIONS.EMPLOYEES, data.map(e => e.id === item.id ? item : e));
-        return item;
+        localDb.set(COLLECTIONS.EMPLOYEES, data.map(e => e.id === cleanItem.id ? cleanItem : e));
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.EMPLOYEES, item.id), item, { merge: true });
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.EMPLOYEES, cleanItem.id), cleanItem, { merge: true });
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     delete: async (id: string): Promise<void> => {
@@ -98,10 +141,11 @@ export const db = {
       } catch (e) { handleDbError(e); }
     },
     import: async (data: Employee[]): Promise<void> => {
-      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.EMPLOYEES, data); return; }
+      const cleanData = toPlainObject(data);
+      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.EMPLOYEES, cleanData); return; }
       try {
         const batch = writeBatch(firestore!);
-        data.forEach(item => batch.set(doc(firestore!, COLLECTIONS.EMPLOYEES, item.id), item, { merge: true }));
+        cleanData.forEach((item: Employee) => batch.set(doc(firestore!, COLLECTIONS.EMPLOYEES, item.id), item, { merge: true }));
         await batch.commit();
       } catch (e) { handleDbError(e); }
     },
@@ -126,13 +170,14 @@ export const db = {
       } catch (e) { return handleDbError(e); }
     },
     add: async (item: Announcement): Promise<void> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Announcement>(COLLECTIONS.ANNOUNCEMENTS);
-        localDb.set(COLLECTIONS.ANNOUNCEMENTS, [item, ...data]);
+        localDb.set(COLLECTIONS.ANNOUNCEMENTS, [cleanItem, ...data]);
         return;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, item.id), item);
+        await setDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, cleanItem.id), cleanItem);
       } catch (e) { handleDbError(e); }
     },
     delete: async (id: string): Promise<void> => {
@@ -155,11 +200,12 @@ export const db = {
       } catch (e) { handleDbError(e); }
     },
     addReply: async (announcementId: string, reply: AnnouncementReply): Promise<void> => {
+      const cleanReply = toPlainObject(reply);
       if (!isCloudEnabled()) return;
       try {
         const annRef = doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, announcementId);
         await updateDoc(annRef, {
-          replies: arrayUnion(reply)
+          replies: arrayUnion(cleanReply)
         });
       } catch (e) { handleDbError(e); }
     }
@@ -174,25 +220,27 @@ export const db = {
       } catch (e) { return handleDbError(e); }
     },
     add: async (item: Task): Promise<Task> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Task>(COLLECTIONS.TASKS);
-        localDb.set(COLLECTIONS.TASKS, [...data, item]);
-        return item;
+        localDb.set(COLLECTIONS.TASKS, [...data, cleanItem]);
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.TASKS, item.id), item);
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.TASKS, cleanItem.id), cleanItem);
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     update: async (item: Task): Promise<Task> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Task>(COLLECTIONS.TASKS);
-        localDb.set(COLLECTIONS.TASKS, data.map(t => t.id === item.id ? item : t));
-        return item;
+        localDb.set(COLLECTIONS.TASKS, data.map(t => t.id === cleanItem.id ? cleanItem : t));
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.TASKS, item.id), item, { merge: true });
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.TASKS, cleanItem.id), cleanItem, { merge: true });
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     delete: async (id: string): Promise<void> => {
@@ -206,21 +254,13 @@ export const db = {
       } catch (e) { handleDbError(e); }
     },
     import: async (data: Task[]): Promise<void> => {
-      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.TASKS, data); return; }
+      const cleanData = toPlainObject(data);
+      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.TASKS, cleanData); return; }
       try {
         const batch = writeBatch(firestore!);
-        data.forEach(item => batch.set(doc(firestore!, COLLECTIONS.TASKS, item.id), item, { merge: true }));
+        cleanData.forEach((item: Task) => batch.set(doc(firestore!, COLLECTIONS.TASKS, item.id), item, { merge: true }));
         await batch.commit();
       } catch (e) { handleDbError(e); }
-    },
-    clear: async () => {
-       if (!isCloudEnabled()) { localDb.set(COLLECTIONS.TASKS, []); return; }
-       try {
-        const snapshot = await getDocs(collection(firestore!, COLLECTIONS.TASKS));
-        const batch = writeBatch(firestore!);
-        snapshot.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-       } catch (e) { handleDbError(e); }
     }
   },
 
@@ -233,14 +273,15 @@ export const db = {
       } catch (e) { return handleDbError(e); }
     },
     add: async (item: Assignment): Promise<Assignment> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<Assignment>(COLLECTIONS.ASSIGNMENTS);
-        localDb.set(COLLECTIONS.ASSIGNMENTS, [...data, item]);
-        return item;
+        localDb.set(COLLECTIONS.ASSIGNMENTS, [...data, cleanItem]);
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.ASSIGNMENTS, item.id), item);
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.ASSIGNMENTS, cleanItem.id), cleanItem);
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     delete: async (id: string): Promise<void> => {
@@ -254,21 +295,13 @@ export const db = {
       } catch (e) { handleDbError(e); }
     },
     import: async (data: Assignment[]): Promise<void> => {
-      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.ASSIGNMENTS, data); return; }
+      const cleanData = toPlainObject(data);
+      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.ASSIGNMENTS, cleanData); return; }
       try {
         const batch = writeBatch(firestore!);
-        data.forEach(item => batch.set(doc(firestore!, COLLECTIONS.ASSIGNMENTS, item.id), item, { merge: true }));
+        cleanData.forEach((item: Assignment) => batch.set(doc(firestore!, COLLECTIONS.ASSIGNMENTS, item.id), item, { merge: true }));
         await batch.commit();
       } catch (e) { handleDbError(e); }
-    },
-    clear: async () => {
-       if (!isCloudEnabled()) { localDb.set(COLLECTIONS.ASSIGNMENTS, []); return; }
-       try {
-        const snapshot = await getDocs(collection(firestore!, COLLECTIONS.ASSIGNMENTS));
-        const batch = writeBatch(firestore!);
-        snapshot.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-       } catch (e) { handleDbError(e); }
     }
   },
 
@@ -280,34 +313,37 @@ export const db = {
         return snapshot.docs.map(doc => doc.data() as TaskLog);
       } catch (e) { return handleDbError(e); }
     },
-    add: async (items: TaskLog[]): Promise<TaskLog[]> => {
+    add: async (items: TaskLog | TaskLog[]): Promise<TaskLog[]> => {
+      const logs = Array.isArray(items) ? items : [items];
+      const cleanLogs = toPlainObject(logs).map((l: TaskLog) => ({
+          ...l,
+          id: generateDeterministicLogId(l)
+      }));
+
       if (!isCloudEnabled()) {
         const data = localDb.get<TaskLog>(COLLECTIONS.LOGS);
-        const processedItems = items.map(l => ({ ...l, id: generateDeterministicLogId(l) }));
-        localDb.set(COLLECTIONS.LOGS, [...data, ...processedItems]);
-        return processedItems;
+        localDb.set(COLLECTIONS.LOGS, [...cleanLogs, ...data]);
+        return cleanLogs;
       }
       try {
         const batch = writeBatch(firestore!);
-        const processedItems = items.map(item => {
-            const deterministicId = generateDeterministicLogId(item);
-            const logWithId = { ...item, id: deterministicId };
-            batch.set(doc(firestore!, COLLECTIONS.LOGS, deterministicId), logWithId, { merge: true });
-            return logWithId;
+        cleanLogs.forEach((log: TaskLog) => {
+          batch.set(doc(firestore!, COLLECTIONS.LOGS, log.id), log);
         });
         await batch.commit();
-        return processedItems;
+        return cleanLogs;
       } catch (e) { return handleDbError(e); }
     },
     update: async (item: TaskLog): Promise<TaskLog> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<TaskLog>(COLLECTIONS.LOGS);
-        localDb.set(COLLECTIONS.LOGS, data.map(l => l.id === item.id ? item : l));
-        return item;
+        localDb.set(COLLECTIONS.LOGS, data.map(l => l.id === cleanItem.id ? cleanItem : l));
+        return cleanItem;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.LOGS, item.id), item, { merge: true });
-        return item;
+        await setDoc(doc(firestore!, COLLECTIONS.LOGS, cleanItem.id), cleanItem, { merge: true });
+        return cleanItem;
       } catch (e) { return handleDbError(e); }
     },
     delete: async (id: string): Promise<void> => {
@@ -321,13 +357,11 @@ export const db = {
       } catch (e) { handleDbError(e); }
     },
     import: async (data: TaskLog[]): Promise<void> => {
-      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.LOGS, data); return; }
+      const cleanData = toPlainObject(data);
+      if (!isCloudEnabled()) { localDb.set(COLLECTIONS.LOGS, cleanData); return; }
       try {
         const batch = writeBatch(firestore!);
-        data.forEach(item => {
-            const finalId = generateDeterministicLogId(item);
-            batch.set(doc(firestore!, COLLECTIONS.LOGS, finalId), { ...item, id: finalId }, { merge: true });
-        });
+        cleanData.forEach((item: TaskLog) => batch.set(doc(firestore!, COLLECTIONS.LOGS, item.id), item, { merge: true }));
         await batch.commit();
       } catch (e) { handleDbError(e); }
     },
@@ -342,50 +376,24 @@ export const db = {
     }
   },
 
-  insights: {
-    getLatest: async (): Promise<TeamInsight | null> => {
-      if (!isCloudEnabled()) return null;
-      try {
-        const q = query(collection(firestore!, COLLECTIONS.INSIGHTS), orderBy('generatedAt', 'desc'), limit(1));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) return null;
-        return snapshot.docs[0].data() as TeamInsight;
-      } catch (e) { return null; }
-    },
-    save: async (insight: TeamInsight): Promise<void> => {
-      if (!isCloudEnabled()) return;
-      try {
-        const id = `INSIGHT-${Date.now()}`;
-        await setDoc(doc(firestore!, COLLECTIONS.INSIGHTS, id), { ...insight, id });
-      } catch (e) { handleDbError(e); }
-    },
-    clear: async () => {
-       if (!isCloudEnabled()) return;
-       try {
-        const snapshot = await getDocs(collection(firestore!, COLLECTIONS.INSIGHTS));
-        const batch = writeBatch(firestore!);
-        snapshot.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-       } catch (e) { handleDbError(e); }
-    }
-  },
-
   systemLogs: {
     list: async (): Promise<SystemAuditLog[]> => {
       if (!isCloudEnabled()) return localDb.get<SystemAuditLog>(COLLECTIONS.SYSTEM_LOGS);
       try {
-        const snapshot = await getDocs(collection(firestore!, COLLECTIONS.SYSTEM_LOGS));
+        const q = query(collection(firestore!, COLLECTIONS.SYSTEM_LOGS), orderBy('timestamp', 'desc'), limit(100));
+        const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => doc.data() as SystemAuditLog);
       } catch (e) { return handleDbError(e); }
     },
     add: async (item: SystemAuditLog): Promise<void> => {
+      const cleanItem = toPlainObject(item);
       if (!isCloudEnabled()) {
         const data = localDb.get<SystemAuditLog>(COLLECTIONS.SYSTEM_LOGS);
-        localDb.set(COLLECTIONS.SYSTEM_LOGS, [...data, item]);
+        localDb.set(COLLECTIONS.SYSTEM_LOGS, [cleanItem, ...data].slice(0, 500));
         return;
       }
       try {
-        await setDoc(doc(firestore!, COLLECTIONS.SYSTEM_LOGS, item.id), item);
+        await setDoc(doc(firestore!, COLLECTIONS.SYSTEM_LOGS, cleanItem.id), cleanItem);
       } catch (e) { handleDbError(e); }
     },
     clear: async () => {
@@ -399,25 +407,42 @@ export const db = {
     }
   },
 
-  factoryReset: async () => {
-    if(window.confirm("تحذير: هذا سيقوم بتصفير كافة البيانات والبدء من جديد. هل أنت متأكد؟")) {
-        try {
-            if (isCloudEnabled()) {
-                await db.logs.clear();
-                await db.assignments.clear();
-                await db.tasks.clear();
-                await db.employees.clear();
-                await db.systemLogs.clear();
-                await db.insights.clear();
-                await deleteDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, 'all')); // Simplified
-            }
-            localDb.clearAll();
-            alert("تم تصفير النظام بنجاح.");
-            window.location.reload();
-        } catch (e) {
-            console.error(e);
-            alert("حدث خطأ أثناء التصفير، يرجى التحقق من الاتصال بالإنترنت.");
-        }
+  insights: {
+    getLatest: async (): Promise<TeamInsight | null> => {
+      if (!isCloudEnabled()) {
+        const data = localDb.get<TeamInsight>(COLLECTIONS.INSIGHTS);
+        return data.length > 0 ? data[0] : null;
+      }
+      try {
+        const q = query(collection(firestore!, COLLECTIONS.INSIGHTS), orderBy('generatedAt', 'desc'), limit(1));
+        const snapshot = await getDocs(q);
+        return snapshot.empty ? null : (snapshot.docs[0].data() as TeamInsight);
+      } catch (e) { return handleDbError(e); }
+    },
+    save: async (item: TeamInsight): Promise<void> => {
+      const cleanItem = toPlainObject(item);
+      const id = `INSIGHT_${new Date().getTime()}`;
+      if (!isCloudEnabled()) {
+        localDb.set(COLLECTIONS.INSIGHTS, [cleanItem]);
+        return;
+      }
+      try {
+        await setDoc(doc(firestore!, COLLECTIONS.INSIGHTS, id), cleanItem);
+      } catch (e) { handleDbError(e); }
     }
+  },
+
+  factoryReset: async () => {
+    localDb.clearAll();
+    if (!isCloudEnabled()) return;
+    try {
+        const collectionsToClear = Object.values(COLLECTIONS);
+        for (const coll of collectionsToClear) {
+            const snapshot = await getDocs(collection(firestore!, coll));
+            const batch = writeBatch(firestore!);
+            snapshot.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+        }
+    } catch (e) { handleDbError(e); }
   }
 };

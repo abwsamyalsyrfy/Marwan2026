@@ -21,7 +21,7 @@ interface TaskDashboardProps {
   onStartLogging: () => void;
   onApproveLog?: (logId: string) => void;
   onRejectLog?: (logId: string, reason: string) => void;
-  onCommitLog?: (logId: string) => void; // وظيفة جديدة للالتزام
+  onCommitLog?: (logId: string) => void; 
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
@@ -107,8 +107,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   }, [announcements, currentUser.id, isAdmin]);
 
   const stats = useMemo(() => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    // استخدام التوقيت المحلي بدلاً من ISO لتجنب مشاكل المناطق الزمنية
+    const todayStr = new Date().toLocaleDateString('en-CA'); 
     
     const getLogsInLastDays = (logList: TaskLog[], days: number) => {
       const cutoff = new Date();
@@ -116,24 +116,27 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       return logList.filter(l => new Date(l.logDate) >= cutoff);
     };
 
+    const calcRate = (list: TaskLog[]) => {
+      const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
+      if (relevant.length === 0) return 0;
+      const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
+      return Math.round((completed / relevant.length) * 100);
+    };
+
     if (isAdmin) {
       const todayLogs = logs.filter(l => l.logDate.startsWith(todayStr));
       const weekLogs = getLogsInLastDays(logs, 7);
       
-      const calcRate = (list: TaskLog[]) => {
-        const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
-        if (relevant.length === 0) return 0;
-        const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
-        return Math.round((completed / relevant.length) * 100);
-      };
-
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
       const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending');
+
+      // حساب متوسط إنجاز الفريق اليوم للرسم الدائري
+      const teamProgressToday = calcRate(todayLogs);
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date(); d.setDate(d.getDate() - i);
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = d.toLocaleDateString('en-CA');
           const dayLogs = logs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
               dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
@@ -144,13 +147,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
       return {
         isAdmin: true,
-        todayRate: calcRate(todayLogs),
+        todayRate: teamProgressToday,
         weekRate: calcRate(weekLogs),
         activeStaffToday,
         totalStaff: employees.length,
         pendingApprovalsCount: pendingApprovalsList.length,
         pendingApprovalsList: pendingApprovalsList.slice(0, 10),
-        chartData
+        chartData,
+        progressToday: teamProgressToday // للمدير: متوسط الفريق
       };
     } else {
       const myLogs = logs.filter(l => l.employeeId === currentUser.id);
@@ -158,16 +162,11 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const myWeekLogs = getLogsInLastDays(myLogs, 7);
       const myMonthLogs = getLogsInLastDays(myLogs, 30);
 
-      const calcRate = (list: TaskLog[]) => {
-        const relevant = list.filter(l => !isLeaveStatus(l.status) && l.status !== 'NotApplicable' && l.status !== 'لا تنطبق');
-        if (relevant.length === 0) return 0;
-        const completed = relevant.filter(l => isCompletedStatus(l.status)).length;
-        return Math.round((completed / relevant.length) * 100);
-      };
-
       const myAssignments = assignments.filter(a => a.employeeId === currentUser.id);
       const completedToday = myTodayLogs.filter(l => isCompletedStatus(l.status)).length;
-      const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : 0;
+      
+      // النسبة تعتمد على المهام الروتينية المسندة لليوم
+      const progressToday = myAssignments.length > 0 ? Math.round((completedToday / myAssignments.length) * 100) : (myTodayLogs.length > 0 ? 100 : 0);
 
       const reportingDays = new Set(
         myLogs
@@ -178,14 +177,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           .map(l => l.logDate.split('T')[0])
       ).size;
 
-      // تعديل هنا ليشمل المرفوض والملتزم به
       const myRejectedLogs = myLogs.filter(l => l.approvalStatus === 'Rejected' || l.approvalStatus === 'CommitmentPending');
       const myPendingLogs = myLogs.filter(l => l.approvalStatus === 'PendingApproval');
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date(); d.setDate(d.getDate() - i);
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = d.toLocaleDateString('en-CA');
           const dayLogs = myLogs.filter(l => l.logDate.startsWith(dateStr));
           chartData.push({
               dayName: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
@@ -199,7 +197,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         todayRate: calcRate(myTodayLogs),
         weekRate: calcRate(myWeekLogs),
         monthRate: calcRate(myMonthLogs),
-        progressToday,
+        progressToday, // للموظف: إنجازه الشخصي
         completedToday,
         reportingDays,
         chartData,
@@ -448,76 +446,30 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 flex flex-col gap-8">
-          {isAdmin ? (
-            <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-100 border border-gray-100 p-6 flex-1 flex flex-col relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                  <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
-                </h3>
-                <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">{stats.pendingApprovalsCount} طلب</span>
-              </div>
-              <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar flex-1">
-                {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
-                  const emp = employees.find(e => e.id === log.employeeId);
-                  const isCommitment = log.approvalStatus === 'CommitmentPending';
-
-                  return (
-                    <div key={log.id} className={`p-4 rounded-2xl border transition-all duration-300 group ${isCommitment ? 'bg-indigo-50/50 border-indigo-200' : 'bg-gray-50 border-gray-200 hover:border-indigo-200 hover:bg-white'}`}>
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                             <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
-                             {isCommitment && <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">التزام</span>}
-                          </div>
-                          <p className="text-[10px] text-gray-500 line-clamp-1">{log.description}</p>
-                        </div>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                          {log.taskType === 'Daily' ? 'روتين' : 'إضافي'}
-                        </span>
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => onApproveLog?.(log.id)} className={`flex-1 py-1.5 text-white rounded-xl text-xs font-bold transition-colors shadow-sm ${isCommitment ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                          {isCommitment ? 'قبول الالتزام' : 'اعتماد'}
-                        </button>
-                        <button onClick={() => onRejectLog?.(log.id, 'رفض سريع')} className="px-3 py-1.5 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"><X size={14}/></button>
-                      </div>
-                    </div>
-                  );
-                }) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
-                    <CheckCircle2 size={48} className="mb-2" />
-                    <p className="text-sm font-bold">لا توجد سجلات معلقة</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
             <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[450px]">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none rotate-12"><Target size={180} /></div>
-              <h3 className="text-xl font-black text-gray-900 mb-8">إنجازك اليوم</h3>
+              <h3 className="text-xl font-black text-gray-900 mb-8">{isAdmin ? 'إنتاجية الفريق اليوم' : 'إنجازك اليوم'}</h3>
               <div className="relative w-48 h-48 mb-10 scale-110">
                 <svg className="w-full h-full transform -rotate-90">
                   <circle cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" className="text-gray-100" />
                   <circle 
                     cx="96" cy="96" r="86" stroke="currentColor" strokeWidth="14" fill="transparent" 
                     strokeDasharray={540.35}
-                    strokeDashoffset={540.35 - (540.35 * (stats.isAdmin ? 0 : stats.progressToday)) / 100}
+                    strokeDashoffset={540.35 - (540.35 * (stats.progressToday)) / 100}
                     strokeLinecap="round"
                     className="text-indigo-600 transition-all duration-1000 ease-out"
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-black text-gray-900">{stats.isAdmin ? '0' : stats.progressToday}%</span>
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">التقدم اليومي</span>
+                  <span className="text-4xl font-black text-gray-900">{stats.progressToday}%</span>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">{isAdmin ? 'معدل إنجاز الفريق' : 'التقدم اليومي'}</span>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 mb-8 font-medium">الاستمرار في تسجيل المهام يرفع من نقاط تميزك</p>
+              <p className="text-sm text-gray-500 mb-8 font-medium">{isAdmin ? 'هذا المؤشر يعكس متوسط أداء كافة الموظفين اليوم' : 'الاستمرار في تسجيل المهام يرفع من نقاط تميزك'}</p>
               <button onClick={onStartLogging} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
-                سجل مهامك الآن <ChevronRight size={18} />
+                {isAdmin ? 'إضافة سجل يدوي' : 'سجل مهامك الآن'} <ChevronRight size={18} />
               </button>
             </div>
-          )}
         </div>
 
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-100 p-8 flex flex-col">
@@ -639,6 +591,53 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
            </div>
         </div>
       )}
+
+      {isAdmin && (
+        <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-100 border border-gray-100 p-6 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+              <ListChecks size={20} className="text-amber-600" /> مراجعة سريعة
+            </h3>
+            <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-xs font-black">{stats.pendingApprovalsCount} طلب</span>
+          </div>
+          <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
+            {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
+              const emp = employees.find(e => e.id === log.employeeId);
+              const isCommitment = log.approvalStatus === 'CommitmentPending';
+
+              return (
+                <div key={log.id} className={`p-4 rounded-2xl border transition-all duration-300 group ${isCommitment ? 'bg-indigo-50/50 border-indigo-200' : 'bg-gray-50 border-gray-200 hover:border-indigo-200 hover:bg-white'}`}>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                         <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
+                         {isCommitment && <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">التزام</span>}
+                      </div>
+                      <p className="text-[10px] text-gray-500 line-clamp-1">{log.description}</p>
+                    </div>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                      {log.taskType === 'Daily' ? 'روتين' : 'إضافي'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => onApproveLog?.(log.id)} className={`flex-1 py-1.5 text-white rounded-xl text-xs font-bold transition-colors shadow-sm ${isCommitment ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                      {isCommitment ? 'قبول الالتزام' : 'اعتماد'}
+                    </button>
+                    <button onClick={() => onRejectLog?.(log.id, 'رفض سريع')} className="px-3 py-1.5 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"><X size={14}/></button>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
+                <CheckCircle2 size={48} className="mb-2" />
+                <p className="text-sm font-bold">لا توجد سجلات معلقة</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
