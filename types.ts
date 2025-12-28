@@ -32,7 +32,7 @@ export interface TaskLog {
   taskType: 'Daily' | 'Extra'; 
   status: 'Completed' | 'Pending' | 'NotApplicable' | 'Leave' | 'منفذة' | 'غير منفذة' | 'لا تنطبق' | 'إجازة' | 'عطلة' | string;
   description: string; 
-  approvalStatus: 'PendingApproval' | 'Approved' | 'Rejected';
+  approvalStatus: 'PendingApproval' | 'Approved' | 'Rejected' | 'CommitmentPending';
   approvedBy?: string;
   approvedAt?: string;
   managerNote?: string;

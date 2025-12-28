@@ -211,6 +211,16 @@ const App: React.FC = () => {
           setLogs(prev => prev.map(l => l.id === logId ? updated : l));
       }
   };
+
+  const handleCommitLog = async (logId: string) => {
+      const log = logs.find(l => l.id === logId);
+      if (log) {
+          const updated = { ...log, approvalStatus: 'CommitmentPending' as const };
+          await db.logs.update(updated);
+          setLogs(prev => prev.map(l => l.id === logId ? updated : l));
+          recordSystemAction(currentUser, 'UPDATE', 'الالتزام', `طلب التزام بالسجل: ${logId}`);
+      }
+  };
   
   const handleDeleteLog = async (id: string) => {
     await db.logs.delete(id);
@@ -281,7 +291,7 @@ service cloud.firestore {
       <main className="flex-1 md:mr-64 p-4 md:p-8">
         {(isOfflineMode || isPermissionError) && <div className="mb-4 bg-amber-50 p-3 rounded-lg text-amber-800 text-xs font-bold border border-amber-200">وضع العمل المحلي: قد لا يتم حفظ التغييرات على السحابة حالياً.</div>}
         
-        {activeTab === 'dashboard' && <TaskDashboard currentUser={currentUser} logs={logs} employees={employees} announcements={announcements} onRefresh={() => window.location.reload()} onStartLogging={() => setActiveTab('daily-log')} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}
+        {activeTab === 'dashboard' && <TaskDashboard currentUser={currentUser} logs={logs} employees={employees} announcements={announcements} onRefresh={() => window.location.reload()} onStartLogging={() => setActiveTab('daily-log')} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} onCommitLog={handleCommitLog} />}
         {activeTab === 'daily-log' && <DailyLogger currentUser={currentUser} tasks={tasks} assignments={assignments} logs={logs} onSaveLogs={handleSaveLogs} onCancel={() => setActiveTab('dashboard')} />}
         {activeTab === 'reports' && <AnalyticsReports employees={employees} logs={logs} tasks={tasks} assignments={assignments} />}
         {activeTab === 'admin' && <AdminPanel employees={employees} tasks={tasks} assignments={assignments} logs={logs} systemLogs={systemLogs} announcements={announcements} onAddAnnouncement={handleAddAnnouncement} onDeleteAnnouncement={handleDeleteAnnouncement} onImport={handleImportData} onAddAssignment={handleAddAssignment} onDeleteAssignment={handleDeleteAssignment} onAddEmployee={handleAddEmployee} onUpdateEmployee={handleUpdateEmployee} onDeleteEmployee={handleDeleteEmployee} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onUpdateLog={handleUpdateLog} onDeleteLog={handleDeleteLog} onClearData={handleClearData} onApproveLog={handleApproveLog} onRejectLog={handleRejectLog} />}

@@ -6,7 +6,7 @@ import {
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff, ShieldAlert
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -21,11 +21,12 @@ interface TaskDashboardProps {
   onStartLogging: () => void;
   onApproveLog?: (logId: string) => void;
   onRejectLog?: (logId: string, reason: string) => void;
+  onCommitLog?: (logId: string) => void; // وظيفة جديدة للالتزام
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
   currentUser, logs, employees = [], assignments = [], announcements = [],
-  onRefresh, onStartLogging, onApproveLog, onRejectLog 
+  onRefresh, onStartLogging, onApproveLog, onRejectLog, onCommitLog
 }) => {
   const isAdmin = currentUser.role === 'Admin';
   
@@ -34,6 +35,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   const [showReplies, setShowReplies] = useState<Record<string, boolean>>({});
   const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
+  const [committingIds, setCommittingIds] = useState<string[]>([]);
 
   useEffect(() => {
     const loadCached = async () => {
@@ -81,6 +83,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     } catch (e) { console.error(e); }
   };
 
+  const handleCommitClick = async (logId: string) => {
+    setCommittingIds(prev => [...prev, logId]);
+    if (onCommitLog) {
+      await onCommitLog(logId);
+    }
+    setCommittingIds(prev => prev.filter(id => id !== logId));
+  };
+
   const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة'].includes(status);
   const isCompletedStatus = (status: string) => ['Completed', 'منفذة'].includes(status);
   const isWeekend = (dateStr: string) => {
@@ -118,7 +128,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       };
 
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
-      const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval');
+      const pendingApprovalsList = logs.filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending');
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
@@ -168,7 +178,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           .map(l => l.logDate.split('T')[0])
       ).size;
 
-      const myRejectedLogs = myLogs.filter(l => l.approvalStatus === 'Rejected');
+      // تعديل هنا ليشمل المرفوض والملتزم به
+      const myRejectedLogs = myLogs.filter(l => l.approvalStatus === 'Rejected' || l.approvalStatus === 'CommitmentPending');
       const myPendingLogs = myLogs.filter(l => l.approvalStatus === 'PendingApproval');
 
       const chartData = [];
@@ -350,12 +361,18 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
             </div>
           </div>
           <div className="space-y-3">
-            {visibleRejectedLogs.map(log => (
-              <div key={log.id} className="bg-white p-5 rounded-2xl border border-red-100 flex flex-col gap-4 relative group">
+            {visibleRejectedLogs.map(log => {
+              const isCommitmentPending = log.approvalStatus === 'CommitmentPending';
+              const isCommitting = committingIds.includes(log.id);
+
+              return (
+              <div key={log.id} className={`bg-white p-5 rounded-2xl border flex flex-col gap-4 relative group transition-all ${isCommitmentPending ? 'border-amber-200 bg-amber-50/20 opacity-80' : 'border-red-100'}`}>
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full uppercase tracking-widest">تتطلب مراجعة</span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${isCommitmentPending ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                        {isCommitmentPending ? 'طلب التزام قيد المراجعة' : 'تتطلب مراجعة'}
+                      </span>
                       <span className="text-[10px] font-bold text-gray-400">تاريخ السجل: {new Date(log.logDate).toLocaleDateString('ar-EG')}</span>
                     </div>
                     <p className="text-sm font-bold text-gray-800 leading-relaxed">{log.description}</p>
@@ -376,6 +393,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                       onClick={() => handleCopyDescription(log.description)}
                       className="p-2.5 bg-gray-50 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-gray-100"
                       title="نسخ الوصف"
+                      disabled={isCommitmentPending}
                     >
                       <Copy size={16} />
                     </button>
@@ -386,16 +404,26 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                     >
                       <EyeOff size={16} />
                     </button>
-                    <button 
-                      onClick={onStartLogging}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-black hover:bg-red-700 transition-all shadow-md active:scale-95"
-                    >
-                      بدء التصحيح <ChevronRight size={14} className="rotate-180 md:rotate-0" />
-                    </button>
+                    
+                    {isCommitmentPending ? (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-[10px] font-black border border-amber-200">
+                        <Clock size={14} className="animate-pulse" /> بانتظار المدير
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => handleCommitClick(log.id)}
+                        disabled={isCommitting}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                      >
+                        {isCommitting ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />} 
+                        سيتم الالتزام بها
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -432,11 +460,16 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
               <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar flex-1">
                 {stats.pendingApprovalsList && stats.pendingApprovalsList.length > 0 ? stats.pendingApprovalsList.map(log => {
                   const emp = employees.find(e => e.id === log.employeeId);
+                  const isCommitment = log.approvalStatus === 'CommitmentPending';
+
                   return (
-                    <div key={log.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-200 group hover:border-indigo-200 hover:bg-white transition-all duration-300">
+                    <div key={log.id} className={`p-4 rounded-2xl border transition-all duration-300 group ${isCommitment ? 'bg-indigo-50/50 border-indigo-200' : 'bg-gray-50 border-gray-200 hover:border-indigo-200 hover:bg-white'}`}>
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
+                          <div className="flex items-center gap-2">
+                             <p className="text-sm font-black text-gray-900">{emp?.name || 'موظف'}</p>
+                             {isCommitment && <span className="bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">التزام</span>}
+                          </div>
                           <p className="text-[10px] text-gray-500 line-clamp-1">{log.description}</p>
                         </div>
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${log.taskType === 'Daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
@@ -444,7 +477,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                         </span>
                       </div>
                       <div className="flex gap-2 mt-3">
-                        <button onClick={() => onApproveLog?.(log.id)} className="flex-1 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm">اعتماد</button>
+                        <button onClick={() => onApproveLog?.(log.id)} className={`flex-1 py-1.5 text-white rounded-xl text-xs font-bold transition-colors shadow-sm ${isCommitment ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                          {isCommitment ? 'قبول الالتزام' : 'اعتماد'}
+                        </button>
                         <button onClick={() => onRejectLog?.(log.id, 'رفض سريع')} className="px-3 py-1.5 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors"><X size={14}/></button>
                       </div>
                     </div>
