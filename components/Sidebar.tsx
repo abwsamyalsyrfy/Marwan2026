@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { LayoutDashboard, ClipboardCheck, Users, Settings, PieChart, Bell, X, LogOut, Shield, UserCircle, AlertCircle, Megaphone } from 'lucide-react';
-import { Employee, PERMISSIONS, TaskLog } from '../types';
+import { Employee, PERMISSIONS, TaskLog, Announcement } from '../types';
 
 interface SidebarProps {
   activeTab: string;
@@ -12,18 +12,25 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   logs: TaskLog[];
-  announcementsCount?: number;
+  announcements?: Announcement[];
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   activeTab, setActiveTab, currentUser, onLogout, missingLogsCount,
-  isOpen, onClose, logs, announcementsCount = 0
+  isOpen, onClose, logs, announcements = []
 }) => {
   if (!currentUser) return null;
 
   const isAdmin = currentUser.role === 'Admin';
   const permissions = currentUser.permissions || [];
   
+  const relevantAnnouncementsCount = useMemo(() => {
+    if (isAdmin) return announcements.length;
+    return announcements.filter(ann => 
+      ann.targetType === 'All' || (ann.targetEmployeeIds && ann.targetEmployeeIds.includes(currentUser.id))
+    ).length;
+  }, [announcements, currentUser.id, isAdmin]);
+
   const userAlerts = useMemo(() => {
     if (isAdmin) return { rejected: 0, pending: 0 };
     const myLogs = logs.filter(l => l.employeeId === currentUser.id);
@@ -87,15 +94,15 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* تنبيه التعاميم الإدارية */}
-        {announcementsCount > 0 && (
+        {relevantAnnouncementsCount > 0 && (
           <button 
             onClick={() => handleItemClick('dashboard')}
             className="mx-4 mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 transition-transform active:scale-95"
           >
             <Megaphone size={18} className="text-blue-600 mt-0.5 shrink-0" />
-            <div className="text-right">
+            <div className="text-right flex-1">
               <p className="text-xs font-bold text-blue-800">تعاميم جديدة</p>
-              <p className="text-[10px] text-blue-700 mt-1">توجد رسائل إدارية هامة في لوحة التحكم.</p>
+              <p className="text-[10px] text-blue-700 mt-1">توجد {relevantAnnouncementsCount} رسائل إدارية هامة.</p>
             </div>
           </button>
         )}

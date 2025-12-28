@@ -45,6 +45,8 @@ export interface Announcement {
   createdAt: string;
   priority: 'Normal' | 'Urgent' | 'Critical';
   createdBy: string;
+  targetType: 'All' | 'Specific';
+  targetEmployeeIds?: string[];
 }
 
 export interface SystemAuditLog {

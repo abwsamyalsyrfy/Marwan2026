@@ -271,7 +271,7 @@ service cloud.firestore {
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)}
         logs={logs}
-        announcementsCount={announcements.length}
+        announcements={announcements}
       />
       <div className="md:hidden bg-white p-4 shadow-sm flex justify-between items-center print:hidden">
         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Menu size={24} /></button>

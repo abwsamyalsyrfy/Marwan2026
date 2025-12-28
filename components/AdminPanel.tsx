@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS, Announcement } from '../types';
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send } from 'lucide-react';
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send, UserMinus } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -52,6 +52,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [annTitle, setAnnTitle] = useState('');
   const [annContent, setAnnContent] = useState('');
   const [annPriority, setAnnPriority] = useState<'Normal' | 'Urgent' | 'Critical'>('Normal');
+  const [annTargetType, setAnnTargetType] = useState<'All' | 'Specific'>('All');
+  const [selectedTargetEmployeeIds, setSelectedTargetEmployeeIds] = useState<string[]>([]);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -115,19 +117,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleCreateAnnouncement = (e: React.FormEvent) => {
     e.preventDefault();
     if (!annTitle || !annContent) return;
+    if (annTargetType === 'Specific' && selectedTargetEmployeeIds.length === 0) {
+      alert('يرجى اختيار موظف واحد على الأقل أو تغيير الجمهور المستهدف إلى "الجميع".');
+      return;
+    }
+
     const newAnn: Announcement = {
       id: `ANN-${Date.now()}`,
       title: annTitle,
       content: annContent,
       priority: annPriority,
       createdAt: new Date().toISOString(),
-      createdBy: 'مدير النظام'
+      createdBy: 'مدير النظام',
+      targetType: annTargetType,
     };
+
+    // Fix: Only add targetEmployeeIds if the type is Specific.
+    // Firestore setDoc throws errors if a field is explicitly set to undefined.
+    if (annTargetType === 'Specific') {
+      newAnn.targetEmployeeIds = selectedTargetEmployeeIds;
+    }
+
     onAddAnnouncement(newAnn);
     setAnnTitle('');
     setAnnContent('');
     setAnnPriority('Normal');
+    setAnnTargetType('All');
+    setSelectedTargetEmployeeIds([]);
     alert('تم نشر التعميم بنجاح.');
+  };
+
+  const handleToggleTargetEmployee = (empId: string) => {
+    setSelectedTargetEmployeeIds(prev => 
+      prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
+    );
   };
 
   const handleBulkApprove = () => {
@@ -489,7 +512,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="p-8 max-w-5xl mx-auto space-y-10">
                 <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-8 shadow-sm">
                     <h4 className="text-xl font-black text-indigo-900 mb-6 flex items-center gap-3"><Send size={24}/> نشر تعميم إداري جديد</h4>
-                    <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+                    <form onSubmit={handleCreateAnnouncement} className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
                                 <label className="text-xs font-bold text-indigo-700 mr-1">عنوان التعميم</label>
@@ -504,6 +527,56 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 </select>
                             </div>
                         </div>
+
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-indigo-700 mr-1">الجمهور المستهدف</label>
+                            <div className="flex gap-4 p-1 bg-white border border-indigo-100 rounded-xl w-fit">
+                                <button 
+                                  type="button" 
+                                  onClick={() => setAnnTargetType('All')} 
+                                  className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${annTargetType === 'All' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-indigo-600'}`}
+                                >
+                                  الجميع
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setAnnTargetType('Specific')} 
+                                  className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${annTargetType === 'Specific' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-indigo-600'}`}
+                                >
+                                  موظفين معينين
+                                </button>
+                            </div>
+                            
+                            {annTargetType === 'Specific' && (
+                              <div className="bg-white border border-indigo-100 rounded-2xl p-4 animate-fade-in">
+                                  <div className="flex items-center gap-2 mb-3 border-b border-indigo-50 pb-2">
+                                      <Search size={14} className="text-indigo-400" />
+                                      <input type="text" placeholder="ابحث عن موظف..." className="w-full text-xs outline-none bg-transparent" />
+                                  </div>
+                                  <div className="max-h-40 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
+                                      {employees.filter(e => e.active).map(emp => (
+                                          <label key={emp.id} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${selectedTargetEmployeeIds.includes(emp.id) ? 'bg-indigo-50 border-indigo-300' : 'bg-gray-50 border-gray-100 hover:border-indigo-200'}`}>
+                                              <input 
+                                                type="checkbox" 
+                                                checked={selectedTargetEmployeeIds.includes(emp.id)} 
+                                                onChange={() => handleToggleTargetEmployee(emp.id)} 
+                                                className="rounded text-indigo-600 focus:ring-indigo-500" 
+                                              />
+                                              <div className="flex flex-col">
+                                                <span className="text-xs font-black text-gray-800">{emp.name}</span>
+                                                <span className="text-[10px] text-gray-400">{emp.id}</span>
+                                              </div>
+                                          </label>
+                                      ))}
+                                  </div>
+                                  <div className="mt-3 flex justify-between items-center px-1">
+                                      <span className="text-[10px] font-bold text-indigo-500">تم اختيار {selectedTargetEmployeeIds.length} موظف</span>
+                                      <button type="button" onClick={() => setSelectedTargetEmployeeIds(employees.filter(e => e.active).map(e => e.id))} className="text-[10px] font-black text-indigo-600 hover:underline">تحديد الجميع</button>
+                                  </div>
+                              </div>
+                            )}
+                        </div>
+
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-indigo-700 mr-1">المحتوى</label>
                             <textarea value={annContent} onChange={e => setAnnContent(e.target.value)} rows={3} placeholder="اكتب تفاصيل التعميم هنا..." className="w-full p-3 border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-none" required />
@@ -519,7 +592,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             <div className="flex gap-4 items-start">
                                 <div className={`p-3 rounded-xl ${ann.priority === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}><Megaphone size={20}/></div>
                                 <div>
-                                    <h5 className="font-black text-gray-900">{ann.title}</h5>
+                                    <div className="flex items-center gap-2">
+                                      <h5 className="font-black text-gray-900">{ann.title}</h5>
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${ann.targetType === 'Specific' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                        {ann.targetType === 'Specific' ? 'مخصص' : 'للجميع'}
+                                      </span>
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1 line-clamp-1">{ann.content}</p>
                                     <span className="text-[10px] text-gray-400 font-bold mt-2 inline-block">تاريخ النشر: {new Date(ann.createdAt).toLocaleString('ar-EG')}</span>
                                 </div>

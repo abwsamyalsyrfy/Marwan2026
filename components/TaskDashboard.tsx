@@ -60,6 +60,13 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     return day === 4 || day === 5;
   };
 
+  const relevantAnnouncements = useMemo(() => {
+    if (isAdmin) return announcements;
+    return announcements.filter(ann => 
+      ann.targetType === 'All' || (ann.targetEmployeeIds && ann.targetEmployeeIds.includes(currentUser.id))
+    );
+  }, [announcements, currentUser.id, isAdmin]);
+
   const stats = useMemo(() => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -195,9 +202,9 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       </div>
 
       {/* التعاميم النشطة */}
-      {announcements && announcements.length > 0 && (
+      {relevantAnnouncements && relevantAnnouncements.length > 0 && (
         <div className="space-y-4">
-           {announcements.slice(0, 2).map(ann => (
+           {relevantAnnouncements.slice(0, 3).map(ann => (
              <div key={ann.id} className={`rounded-2xl p-6 shadow-sm border-r-8 animate-slide-up ${
                ann.priority === 'Critical' ? 'bg-red-50 border-red-500 text-red-900' : 
                ann.priority === 'Urgent' ? 'bg-amber-50 border-amber-500 text-amber-900' :
@@ -213,7 +220,12 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                    </div>
                    <div className="flex-1">
                       <div className="flex justify-between items-center mb-1">
-                        <h4 className="font-black text-lg">{ann.title}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-black text-lg">{ann.title}</h4>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${ann.targetType === 'Specific' ? 'bg-amber-200 text-amber-900' : 'bg-white/50 text-indigo-900'}`}>
+                            {ann.targetType === 'Specific' ? 'إليك حصراً' : 'للجميع'}
+                          </span>
+                        </div>
                         <span className="text-[10px] font-bold opacity-60">{new Date(ann.createdAt).toLocaleDateString('ar-EG')}</span>
                       </div>
                       <p className="text-sm font-medium leading-relaxed opacity-80">{ann.content}</p>
