@@ -23,11 +23,12 @@ interface TaskDashboardProps {
   onApproveLog?: (logId: string) => void;
   onRejectLog?: (logId: string, reason: string) => void;
   onCommitLog?: (logId: string) => void; 
+  onAddAnnouncement?: (ann: Announcement) => void;
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
   currentUser, logs, employees = [], assignments = [], announcements = [],
-  onRefresh, onStartLogging, onApproveLog, onRejectLog, onCommitLog
+  onRefresh, onStartLogging, onApproveLog, onRejectLog, onCommitLog, onAddAnnouncement
 }) => {
   const isAdmin = currentUser.role === 'Admin';
   
@@ -38,6 +39,10 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
   const [committingIds, setCommittingIds] = useState<string[]>([]);
   const [processingLogIds, setProcessingLogIds] = useState<string[]>([]);
+  
+  // Quick Announcement State
+  const [showAnnModal, setShowAnnModal] = useState(false);
+  const [newAnn, setNewAnn] = useState({ title: '', content: '', priority: 'Normal' as const });
 
   useEffect(() => {
     const loadCached = async () => {
@@ -74,6 +79,26 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       await onRejectLog(logId, reason || "تم الرفض من اللوحة السريعة");
       setProcessingLogIds(prev => prev.filter(id => id !== logId));
     }
+  };
+
+  const handleQuickAnnounceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAddAnnouncement || !newAnn.title || !newAnn.content) return;
+    
+    const ann: Announcement = {
+      id: `ANN-${Date.now()}`,
+      title: newAnn.title,
+      content: newAnn.content,
+      priority: newAnn.priority,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser.name,
+      targetType: 'All',
+    };
+    
+    onAddAnnouncement(ann);
+    setNewAnn({ title: '', content: '', priority: 'Normal' });
+    setShowAnnModal(false);
+    alert('تم نشر التعميم بنجاح.');
   };
 
   const handleLike = async (annId: string, hasLiked: boolean) => {
@@ -158,7 +183,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       const activeStaffToday = new Set(todayLogs.map(l => l.employeeId)).size;
       const pendingApprovalsList = logs
         .filter(l => l.approvalStatus === 'PendingApproval' || l.approvalStatus === 'CommitmentPending')
-        .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime()); // فرز بالأحدث
+        .sort((a, b) => new Date(b.logDate).getTime() - new Date(a.logDate).getTime());
 
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
@@ -284,6 +309,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {isAdmin && (
+            <button 
+              onClick={() => setShowAnnModal(true)} 
+              className="flex items-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-95"
+            >
+              <Megaphone size={20} /> نشر تعميم سريع
+            </button>
+          )}
           <button onClick={onStartLogging} className="flex items-center gap-2 px-6 py-3.5 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg active:scale-95">
             <PlusIcon /> {isAdmin ? 'إضافة سجل يدوي' : 'تسجيل مهام اليوم'}
           </button>
@@ -292,6 +325,73 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Quick Announcement Modal */}
+      {showAnnModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-slide-up">
+              <div className="bg-blue-600 p-8 text-white relative">
+                 <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none rotate-12"><Megaphone size={120} /></div>
+                 <div className="flex justify-between items-start relative z-10">
+                    <div>
+                       <h3 className="text-2xl font-black mb-1">إرسال تعميم جديد</h3>
+                       <p className="text-blue-100 text-xs font-bold uppercase tracking-widest">سيتم توجيهه لجميع أعضاء الفريق</p>
+                    </div>
+                    <button onClick={() => setShowAnnModal(false)} className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-colors"><X size={20}/></button>
+                 </div>
+              </div>
+              <form onSubmit={handleQuickAnnounceSubmit} className="p-8 space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">عنوان التعميم</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newAnn.title}
+                      onChange={e => setNewAnn({...newAnn, title: e.target.value})}
+                      placeholder="مثلاً: تنبيه بخصوص الدوام الرسمي"
+                      className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold"
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">المحتوى</label>
+                    <textarea 
+                      required 
+                      rows={4}
+                      value={newAnn.content}
+                      onChange={e => setNewAnn({...newAnn, content: e.target.value})}
+                      placeholder="اكتب رسالتك للفريق هنا..."
+                      className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-medium resize-none"
+                    />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">مستوى الأهمية</label>
+                    <div className="grid grid-cols-3 gap-3">
+                       {['Normal', 'Urgent', 'Critical'].map((p) => (
+                         <button 
+                           key={p}
+                           type="button"
+                           onClick={() => setNewAnn({...newAnn, priority: p as any})}
+                           className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${
+                             newAnn.priority === p 
+                             ? (p === 'Critical' ? 'bg-red-600 text-white border-red-600' : p === 'Urgent' ? 'bg-amber-500 text-white border-amber-500' : 'bg-blue-600 text-white border-blue-600')
+                             : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100'
+                           }`}
+                         >
+                           {p === 'Normal' ? 'عادي' : p === 'Urgent' ? 'هام' : 'عاجل'}
+                         </button>
+                       ))}
+                    </div>
+                 </div>
+                 <div className="flex gap-4 pt-4">
+                    <button type="button" onClick={() => setShowAnnModal(false)} className="flex-1 py-4 bg-gray-50 text-gray-500 rounded-2xl font-black hover:bg-gray-100 transition-all">إلغاء</button>
+                    <button type="submit" className="flex-2 py-4 bg-blue-600 text-white rounded-2xl font-black hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center justify-center gap-2">
+                       <Send size={18} /> إرسال الآن
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
 
       {/* Announcements */}
       {relevantAnnouncements && relevantAnnouncements.length > 0 && (
