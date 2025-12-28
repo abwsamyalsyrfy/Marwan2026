@@ -6,7 +6,7 @@ import {
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -33,6 +33,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   const [showReplies, setShowReplies] = useState<Record<string, boolean>>({});
+  const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const loadCached = async () => {
@@ -57,7 +58,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const handleLike = async (annId: string, hasLiked: boolean) => {
     try {
       await db.announcements.toggleLike(annId, currentUser.id, hasLiked);
-      onRefresh(); // Refresh to update counts
+      onRefresh(); 
     } catch (e) { console.error(e); }
   };
 
@@ -191,11 +192,24 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         completedToday,
         reportingDays,
         chartData,
-        myRejectedLogs: myRejectedLogs.slice(0, 5), 
+        myRejectedLogs: myRejectedLogs, 
         myPendingCount: myPendingLogs.length
       };
     }
   }, [logs, currentUser.id, isAdmin, assignments, employees]);
+
+  const visibleRejectedLogs = useMemo(() => {
+    return (stats.myRejectedLogs || []).filter(l => !dismissedRejectedIds.includes(l.id));
+  }, [stats.myRejectedLogs, dismissedRejectedIds]);
+
+  const handleCopyDescription = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert('تم نسخ وصف المهمة، يمكنك استخدامه عند إعادة التسجيل.');
+  };
+
+  const handleDismissLog = (id: string) => {
+    setDismissedRejectedIds(prev => [...prev, id]);
+  };
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
@@ -327,22 +341,59 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
         </div>
       )}
 
-      {!isAdmin && stats.myRejectedLogs && stats.myRejectedLogs.length > 0 && (
-        <div className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm animate-fade-in">
-          <div className="flex items-center gap-3 mb-4 text-red-700">
-            <AlertCircle size={24} />
-            <h3 className="font-black text-lg">سجلات مرفوضة تتطلب تعديل</h3>
+      {!isAdmin && visibleRejectedLogs && visibleRejectedLogs.length > 0 && (
+        <div className="bg-red-50 border-r-4 border-red-500 p-6 rounded-2xl shadow-sm animate-fade-in space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-red-700">
+              <AlertCircle size={24} />
+              <h3 className="font-black text-lg">سجلات مرفوضة تتطلب تعديل ({visibleRejectedLogs.length})</h3>
+            </div>
           </div>
           <div className="space-y-3">
-            {stats.myRejectedLogs.map(log => (
-              <div key={log.id} className="bg-white p-4 rounded-xl border border-red-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-bold text-gray-800">{log.description}</p>
-                  <p className="text-xs text-red-600 mt-1 font-bold italic flex items-center gap-1">
-                    <MessageSquare size={12} /> ملاحظة المدير: {log.managerNote || 'لا توجد ملاحظات'}
-                  </p>
+            {visibleRejectedLogs.map(log => (
+              <div key={log.id} className="bg-white p-5 rounded-2xl border border-red-100 flex flex-col gap-4 relative group">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full uppercase tracking-widest">تتطلب مراجعة</span>
+                      <span className="text-[10px] font-bold text-gray-400">تاريخ السجل: {new Date(log.logDate).toLocaleDateString('ar-EG')}</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-800 leading-relaxed">{log.description}</p>
+                    
+                    {log.managerNote && (
+                      <div className="mt-3 bg-red-50/50 p-3 rounded-xl border border-dashed border-red-200 flex items-start gap-3">
+                        <MessageSquare size={16} className="text-red-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[10px] font-black text-red-600 mb-1 uppercase tracking-tighter">ملاحظة المدير:</p>
+                          <p className="text-xs text-red-700 font-medium italic">{log.managerNote}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex md:flex-col gap-2 shrink-0">
+                    <button 
+                      onClick={() => handleCopyDescription(log.description)}
+                      className="p-2.5 bg-gray-50 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-gray-100"
+                      title="نسخ الوصف"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button 
+                      onClick={() => handleDismissLog(log.id)}
+                      className="p-2.5 bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-gray-100"
+                      title="تجاهل مؤقت"
+                    >
+                      <EyeOff size={16} />
+                    </button>
+                    <button 
+                      onClick={onStartLogging}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-black hover:bg-red-700 transition-all shadow-md active:scale-95"
+                    >
+                      بدء التصحيح <ChevronRight size={14} className="rotate-180 md:rotate-0" />
+                    </button>
+                  </div>
                 </div>
-                <div className="text-[10px] font-bold text-gray-400">تاريخ السجل: {new Date(log.logDate).toLocaleDateString('ar-EG')}</div>
               </div>
             ))}
           </div>
