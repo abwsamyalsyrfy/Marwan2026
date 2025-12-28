@@ -1,5 +1,5 @@
 
-import { Employee, Task, Assignment, TaskLog, SystemAuditLog, TeamInsight, Announcement } from '../types';
+import { Employee, Task, Assignment, TaskLog, SystemAuditLog, TeamInsight, Announcement, AnnouncementReply } from '../types';
 import { firestore } from './firebase';
 import { 
   collection, 
@@ -10,7 +10,10 @@ import {
   writeBatch,
   query,
   limit,
-  orderBy
+  orderBy,
+  updateDoc,
+  arrayUnion,
+  arrayRemove
 } from "firebase/firestore";
 
 const COLLECTIONS = {
@@ -140,6 +143,24 @@ export const db = {
       }
       try {
         await deleteDoc(doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, id));
+      } catch (e) { handleDbError(e); }
+    },
+    toggleLike: async (announcementId: string, employeeId: string, hasLiked: boolean): Promise<void> => {
+      if (!isCloudEnabled()) return;
+      try {
+        const annRef = doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, announcementId);
+        await updateDoc(annRef, {
+          likes: hasLiked ? arrayRemove(employeeId) : arrayUnion(employeeId)
+        });
+      } catch (e) { handleDbError(e); }
+    },
+    addReply: async (announcementId: string, reply: AnnouncementReply): Promise<void> => {
+      if (!isCloudEnabled()) return;
+      try {
+        const annRef = doc(firestore!, COLLECTIONS.ANNOUNCEMENTS, announcementId);
+        await updateDoc(annRef, {
+          replies: arrayUnion(reply)
+        });
       } catch (e) { handleDbError(e); }
     }
   },

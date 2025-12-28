@@ -38,6 +38,14 @@ export interface TaskLog {
   managerNote?: string;
 }
 
+export interface AnnouncementReply {
+  id: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface Announcement {
   id: string;
   title: string;
@@ -47,6 +55,8 @@ export interface Announcement {
   createdBy: string;
   targetType: 'All' | 'Specific';
   targetEmployeeIds?: string[];
+  likes?: string[]; // Array of employee IDs who liked
+  replies?: AnnouncementReply[];
 }
 
 export interface SystemAuditLog {

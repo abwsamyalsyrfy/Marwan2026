@@ -1,12 +1,12 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { TaskLog, Employee, TeamInsight, Assignment, Announcement } from '../types';
+import { TaskLog, Employee, TeamInsight, Assignment, Announcement, AnnouncementReply } from '../types';
 import { 
   BarChart3, CheckCircle2, RefreshCw, 
   CalendarCheck, Users, Clock, Check, X, 
   Sparkles, Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
-  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone
+  LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send
 } from 'lucide-react';
 import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
@@ -31,6 +31,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   
   const [insights, setInsights] = useState<TeamInsight | null>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
+  const [showReplies, setShowReplies] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const loadCached = async () => {
@@ -50,6 +52,32 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       await db.insights.save(insightWithTime);
       setInsights(insightWithTime);
     } catch (e) { console.error(e); } finally { setLoadingInsights(false); }
+  };
+
+  const handleLike = async (annId: string, hasLiked: boolean) => {
+    try {
+      await db.announcements.toggleLike(annId, currentUser.id, hasLiked);
+      onRefresh(); // Refresh to update counts
+    } catch (e) { console.error(e); }
+  };
+
+  const handleReply = async (annId: string) => {
+    const content = replyInputs[annId];
+    if (!content?.trim()) return;
+
+    const newReply: AnnouncementReply = {
+      id: `REP-${Date.now()}`,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      content: content.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await db.announcements.addReply(annId, newReply);
+      setReplyInputs(prev => ({ ...prev, [annId]: '' }));
+      onRefresh();
+    } catch (e) { console.error(e); }
   };
 
   const isLeaveStatus = (status: string) => ['Leave', 'إجازة', 'عطلة'].includes(status);
@@ -204,39 +232,98 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       {/* التعاميم النشطة */}
       {relevantAnnouncements && relevantAnnouncements.length > 0 && (
         <div className="space-y-4">
-           {relevantAnnouncements.slice(0, 3).map(ann => (
-             <div key={ann.id} className={`rounded-2xl p-6 shadow-sm border-r-8 animate-slide-up ${
-               ann.priority === 'Critical' ? 'bg-red-50 border-red-500 text-red-900' : 
-               ann.priority === 'Urgent' ? 'bg-amber-50 border-amber-500 text-amber-900' :
-               'bg-blue-50 border-blue-500 text-blue-900'
-             }`}>
-                <div className="flex items-start gap-4">
-                   <div className={`p-3 rounded-xl shadow-sm ${
-                     ann.priority === 'Critical' ? 'bg-red-600 text-white' : 
-                     ann.priority === 'Urgent' ? 'bg-amber-600 text-white' :
-                     'bg-blue-600 text-white'
-                   }`}>
-                      <Megaphone size={20} />
-                   </div>
-                   <div className="flex-1">
-                      <div className="flex justify-between items-center mb-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-black text-lg">{ann.title}</h4>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${ann.targetType === 'Specific' ? 'bg-amber-200 text-amber-900' : 'bg-white/50 text-indigo-900'}`}>
-                            {ann.targetType === 'Specific' ? 'إليك حصراً' : 'للجميع'}
-                          </span>
+           {relevantAnnouncements.slice(0, 5).map(ann => {
+             const hasLiked = ann.likes?.includes(currentUser.id) || false;
+             const likesCount = ann.likes?.length || 0;
+             const repliesCount = ann.replies?.length || 0;
+
+             return (
+               <div key={ann.id} className={`rounded-[2rem] p-6 shadow-sm border-r-8 transition-all animate-slide-up bg-white ${
+                 ann.priority === 'Critical' ? 'border-red-500' : 
+                 ann.priority === 'Urgent' ? 'border-amber-500' :
+                 'border-blue-500'
+               }`}>
+                  <div className="flex items-start gap-4">
+                     <div className={`p-3 rounded-xl shadow-sm ${
+                       ann.priority === 'Critical' ? 'bg-red-600 text-white' : 
+                       ann.priority === 'Urgent' ? 'bg-amber-600 text-white' :
+                       'bg-blue-600 text-white'
+                     }`}>
+                        <Megaphone size={20} />
+                     </div>
+                     <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-black text-lg text-gray-900">{ann.title}</h4>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${ann.targetType === 'Specific' ? 'bg-amber-100 text-amber-900' : 'bg-blue-50 text-indigo-900'}`}>
+                              {ann.targetType === 'Specific' ? 'إليك حصراً' : 'للجميع'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-400">{new Date(ann.createdAt).toLocaleDateString('ar-EG')}</span>
                         </div>
-                        <span className="text-[10px] font-bold opacity-60">{new Date(ann.createdAt).toLocaleDateString('ar-EG')}</span>
-                      </div>
-                      <p className="text-sm font-medium leading-relaxed opacity-80">{ann.content}</p>
-                      <div className="mt-3 flex items-center gap-2">
-                         <span className="text-[10px] font-black uppercase tracking-widest bg-white/50 px-2 py-0.5 rounded-lg border border-black/5">صادر عن: {ann.createdBy}</span>
-                         {ann.priority === 'Critical' && <span className="text-[9px] font-black bg-red-600 text-white px-2 py-0.5 rounded-lg uppercase animate-pulse">هام جداً</span>}
-                      </div>
-                   </div>
-                </div>
-             </div>
-           ))}
+                        <p className="text-sm font-medium leading-relaxed text-gray-600">{ann.content}</p>
+                        
+                        <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-gray-50 pt-4">
+                           <button 
+                             onClick={() => handleLike(ann.id, hasLiked)}
+                             className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${hasLiked ? 'bg-red-50 text-red-600 shadow-inner' : 'bg-gray-50 text-gray-500 hover:bg-red-50 hover:text-red-500'}`}
+                           >
+                             <Heart size={16} fill={hasLiked ? "currentColor" : "none"} />
+                             {likesCount > 0 && likesCount} {hasLiked ? 'أعجبني' : 'إعجاب'}
+                           </button>
+                           
+                           <button 
+                             onClick={() => setShowReplies(prev => ({ ...prev, [ann.id]: !prev[ann.id] }))}
+                             className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${showReplies[ann.id] ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-50 text-gray-500 hover:bg-indigo-50 hover:text-indigo-500'}`}
+                           >
+                             <MessageSquare size={16} />
+                             {repliesCount > 0 ? `${repliesCount} ردود` : 'إضافة رد'}
+                           </button>
+
+                           <div className="flex-1"></div>
+                           <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">صادر عن: {ann.createdBy}</span>
+                        </div>
+
+                        {/* قسم الردود */}
+                        {showReplies[ann.id] && (
+                          <div className="mt-4 space-y-4 animate-fade-in">
+                            <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                              {ann.replies && ann.replies.length > 0 ? ann.replies.map(rep => (
+                                <div key={rep.id} className="bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                                   <div className="flex justify-between items-center mb-1">
+                                      <span className="text-[10px] font-black text-indigo-600">{rep.authorName}</span>
+                                      <span className="text-[9px] text-gray-400">{new Date(rep.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                                   </div>
+                                   <p className="text-xs text-gray-700 leading-relaxed">{rep.content}</p>
+                                </div>
+                              )) : (
+                                <p className="text-[10px] text-center text-gray-400 italic py-2">لا توجد ردود بعد. كن أول من يعلق!</p>
+                              )}
+                            </div>
+                            
+                            <div className="flex gap-2 bg-gray-50 p-2 rounded-2xl border border-gray-100">
+                               <input 
+                                 type="text" 
+                                 value={replyInputs[ann.id] || ''} 
+                                 onChange={e => setReplyInputs(prev => ({ ...prev, [ann.id]: e.target.value }))}
+                                 onKeyDown={e => e.key === 'Enter' && handleReply(ann.id)}
+                                 placeholder="اكتب ردك هنا..." 
+                                 className="flex-1 bg-transparent text-xs px-3 outline-none"
+                               />
+                               <button 
+                                 onClick={() => handleReply(ann.id)}
+                                 className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"
+                               >
+                                 <Send size={14} />
+                               </button>
+                            </div>
+                          </div>
+                        )}
+                     </div>
+                  </div>
+               </div>
+             );
+           })}
         </div>
       )}
 
@@ -469,8 +556,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.1); }
         @keyframes slide-up {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
