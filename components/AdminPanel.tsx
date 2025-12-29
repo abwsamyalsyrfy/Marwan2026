@@ -1,7 +1,8 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS, Announcement } from '../types';
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send, UserMinus } from 'lucide-react';
+// Added ShieldAlert and Clock to the lucide-react imports to resolve "Cannot find name" errors.
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send, UserMinus, ChevronUp, ChevronDown, ListFilter, ShieldAlert, Clock } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -43,6 +44,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [importStatus, setImportStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [empRoleFilter, setEmpRoleFilter] = useState<'All' | 'Admin' | 'User'>('All');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // New Filter States for Task Logs
+  const [logStatusFilter, setLogStatusFilter] = useState('All'); // Status: Completed, Pending, etc.
+  const [logApprovalFilter, setLogApprovalFilter] = useState('All'); // Approval: Approved, Rejected, PendingApproval
+  const [logTypeFilter, setLogTypeFilter] = useState('All'); // Type: Daily, Extra
+  const [sortConfig, setSortConfig] = useState<{ key: keyof TaskLog | 'empName', direction: 'asc' | 'desc' } | null>({ key: 'logDate', direction: 'desc' });
+
   const [logStartDate, setLogStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]); 
   const [logEndDate, setLogEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [importType, setImportType] = useState<'employees' | 'tasks' | 'assignments' | 'logs'>('employees');
@@ -84,27 +92,73 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     return empName.includes(searchTerm) || taskDesc.includes(searchTerm);
   });
   
-  const filteredTaskLogs = logs.filter(l => {
-    const desc = l.description || '';
-    const empId = l.employeeId || '';
-    const empName = employees.find(e => e.id === l.employeeId)?.name || '';
-    const matchesSearch = desc.includes(searchTerm) || empId.includes(searchTerm) || empName.includes(searchTerm);
-    let matchesDate = true;
-    if (!showAllDates) {
-        try {
-            const logDateObj = new Date(l.logDate);
-            if (isNaN(logDateObj.getTime())) {
-                matchesDate = false;
-            } else {
-                const logDateStr = logDateObj.toISOString().split('T')[0];
-                matchesDate = logDateStr >= logStartDate && logDateStr <= logEndDate;
-            }
-        } catch (e) {
-            matchesDate = false;
+  const filteredTaskLogs = useMemo(() => {
+    let result = logs.filter(l => {
+        const desc = l.description || '';
+        const empId = l.employeeId || '';
+        const empName = employees.find(e => e.id === l.employeeId)?.name || '';
+        
+        // Search Filter
+        const matchesSearch = desc.includes(searchTerm) || empId.includes(searchTerm) || empName.includes(searchTerm);
+        
+        // Date Filter
+        let matchesDate = true;
+        if (!showAllDates) {
+            try {
+                const logDateObj = new Date(l.logDate);
+                if (isNaN(logDateObj.getTime())) {
+                    matchesDate = false;
+                } else {
+                    const logDateStr = logDateObj.toISOString().split('T')[0];
+                    matchesDate = logDateStr >= logStartDate && logDateStr <= logEndDate;
+                }
+            } catch (e) { matchesDate = false; }
         }
+
+        // Status Filter (Execution)
+        const matchesStatus = logStatusFilter === 'All' || l.status === logStatusFilter;
+
+        // Approval Filter
+        const matchesApproval = logApprovalFilter === 'All' || l.approvalStatus === logApprovalFilter;
+
+        // Type Filter
+        const matchesType = logTypeFilter === 'All' || l.taskType === logTypeFilter;
+
+        return matchesSearch && matchesDate && matchesStatus && matchesApproval && matchesType;
+    });
+
+    // Sorting
+    if (sortConfig) {
+        result.sort((a, b) => {
+            let aValue: any = a[sortConfig.key as keyof TaskLog];
+            let bValue: any = b[sortConfig.key as keyof TaskLog];
+
+            if (sortConfig.key === 'empName') {
+                aValue = employees.find(e => e.id === a.employeeId)?.name || '';
+                bValue = employees.find(e => e.id === b.employeeId)?.name || '';
+            }
+
+            if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
     }
-    return matchesSearch && matchesDate;
-  }).sort((a,b) => new Date(b.logDate || 0).getTime() - new Date(a.logDate || 0).getTime());
+
+    return result;
+  }, [logs, searchTerm, logStatusFilter, logApprovalFilter, logTypeFilter, sortConfig, logStartDate, logEndDate, showAllDates, employees]);
+
+  const requestSort = (key: keyof TaskLog | 'empName') => {
+      let direction: 'asc' | 'desc' = 'asc';
+      if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+          direction = 'desc';
+      }
+      setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: string) => {
+      if (sortConfig?.key !== key) return <div className="w-4 h-4 opacity-20"><ChevronUp size={14}/></div>;
+      return sortConfig.direction === 'asc' ? <ChevronUp size={14} className="text-indigo-600"/> : <ChevronDown size={14} className="text-indigo-600"/>;
+  };
 
   const filteredSystemLogs = systemLogs.filter(l => {
       const actor = l.actorName || '';
@@ -132,8 +186,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       targetType: annTargetType,
     };
 
-    // Fix: Only add targetEmployeeIds if the type is Specific.
-    // Firestore setDoc throws errors if a field is explicitly set to undefined.
     if (annTargetType === 'Specific') {
       newAnn.targetEmployeeIds = selectedTargetEmployeeIds;
     }
@@ -148,6 +200,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleToggleTargetEmployee = (empId: string) => {
+    // Fixed Error: Changed 'id' to 'empId' in the spread operator to correctly add the selected employee ID.
     setSelectedTargetEmployeeIds(prev => 
       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
     );
@@ -156,7 +209,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleBulkApprove = () => {
       const unapproved = filteredTaskLogs.filter(l => l.approvalStatus === 'PendingApproval');
       if (unapproved.length === 0) return;
-      if (window.confirm(`هل أنت متأكد من المصادقة على ${unapproved.length} سجلات معلقة؟`)) {
+      if (window.confirm(`هل أنت متأكد من المصادقة على ${unapproved.length} سجلات معلقة في القائمة الحالية؟`)) {
           unapproved.forEach(log => onApproveLog(log.id));
       }
   };
@@ -549,7 +602,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             
                             {annTargetType === 'Specific' && (
                               <div className="bg-white border border-indigo-100 rounded-2xl p-4 animate-fade-in">
-                                  <div className="flex items-center gap-2 mb-3 border-b border-indigo-50 pb-2">
+                                  <div className="flex items-center gap-2 mb-3 border-indigo-50 pb-2">
                                       <Search size={14} className="text-indigo-400" />
                                       <input type="text" placeholder="ابحث عن موظف..." className="w-full text-xs outline-none bg-transparent" />
                                   </div>
@@ -755,45 +808,93 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
         )}
 
-        {/* === TASK LOGS TAB === */}
+        {/* === TASK LOGS TAB (UPDATED WITH ADVANCED FILTERS) === */}
         {activeTab === 'task_logs' && (
-             <div className="flex flex-col h-full">
-                <div className="p-4 border-b border-gray-100 flex flex-col gap-4 bg-gray-50">
-                   <div className="flex flex-col md:flex-row gap-4 items-center">
-                        <div className="relative flex-1 w-full">
-                            <input type="text" placeholder="بحث بالوصف، اسم الموظف..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2 border rounded-lg text-sm" />
-                            <Search className="absolute right-3 top-2.5 text-gray-400" size={18} />
+             <div className="flex flex-col h-full bg-white">
+                <div className="p-5 border-b border-gray-100 bg-gray-50/80 space-y-4">
+                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-center">
+                        {/* Search */}
+                        <div className="xl:col-span-4 relative">
+                            <input type="text" placeholder="بحث بالوصف، اسم الموظف..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            <Search className="absolute right-3 top-3 text-gray-400" size={18} />
                         </div>
-                        <div className="flex gap-2 items-center">
-                            <span className="text-xs font-bold text-gray-500">التاريخ:</span>
-                            <input type="date" value={logStartDate} onChange={e => setLogStartDate(e.target.value)} disabled={showAllDates} className={`border rounded p-1 text-sm ${showAllDates ? 'bg-gray-200' : 'bg-white'}`} />
-                            <span className="text-gray-400">-</span>
-                            <input type="date" value={logEndDate} onChange={e => setLogEndDate(e.target.value)} disabled={showAllDates} className={`border rounded p-1 text-sm ${showAllDates ? 'bg-gray-200' : 'bg-white'}`} />
-                            <label className="flex items-center gap-1 text-xs font-bold cursor-pointer select-none">
-                                <input type="checkbox" checked={showAllDates} onChange={e => setShowAllDates(e.target.checked)} className="rounded text-indigo-600" />
-                                عرض الكل
-                            </label>
+
+                        {/* Filters Row */}
+                        <div className="xl:col-span-8 flex flex-wrap gap-3 items-center">
+                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                <ListFilter size={14} className="text-indigo-500" />
+                                <select value={logStatusFilter} onChange={e => setLogStatusFilter(e.target.value)} className="text-xs font-bold outline-none bg-transparent cursor-pointer">
+                                    <option value="All">حالة التنفيذ (الكل)</option>
+                                    <option value="Completed">منفذة</option>
+                                    <option value="Pending">غير منفذة</option>
+                                    <option value="NotApplicable">لا تنطبق</option>
+                                    <option value="Leave">إجازة</option>
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                <CheckSquare size={14} className="text-emerald-500" />
+                                <select value={logApprovalFilter} onChange={e => setLogApprovalFilter(e.target.value)} className="text-xs font-bold outline-none bg-transparent cursor-pointer">
+                                    <option value="All">حالة الاعتماد (الكل)</option>
+                                    <option value="Approved">معتمد</option>
+                                    <option value="Rejected">مرفوض</option>
+                                    <option value="PendingApproval">بانتظار المراجعة</option>
+                                    <option value="CommitmentPending">طلب التزام</option>
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                <Activity size={14} className="text-blue-500" />
+                                <select value={logTypeFilter} onChange={e => setLogTypeFilter(e.target.value)} className="text-xs font-bold outline-none bg-transparent cursor-pointer">
+                                    <option value="All">النوع (الكل)</option>
+                                    <option value="Daily">روتينية</option>
+                                    <option value="Extra">إضافية</option>
+                                </select>
+                            </div>
                         </div>
                    </div>
-                    <div className="flex items-center justify-between">
-                         <div className="text-xs text-gray-500 font-bold">عدد السجلات: {filteredTaskLogs.length}</div>
-                         <div className="flex gap-2">
-                            <button onClick={handleExportExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm"><FileSpreadsheet size={16}/> تصدير (Excel)</button>
-                            <button onClick={handleBulkApprove} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 hover:bg-blue-700 shadow-sm"><CheckCircle size={16}/> مصادقة المعلق (Bulk)</button>
-                         </div>
-                    </div>
+
+                   <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-t border-gray-100 pt-4">
+                        <div className="flex gap-3 items-center">
+                            <div className="flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+                                <input type="date" value={logStartDate} onChange={e => setLogStartDate(e.target.value)} disabled={showAllDates} className={`px-2 py-1 text-xs font-bold outline-none rounded-lg ${showAllDates ? 'bg-gray-50 text-gray-300' : 'bg-white text-gray-700'}`} />
+                                <span className="px-2 text-gray-300 flex items-center">-</span>
+                                <input type="date" value={logEndDate} onChange={e => setLogEndDate(e.target.value)} disabled={showAllDates} className={`px-2 py-1 text-xs font-bold outline-none rounded-lg ${showAllDates ? 'bg-gray-50 text-gray-300' : 'bg-white text-gray-700'}`} />
+                            </div>
+                            <label className="flex items-center gap-2 text-xs font-black text-gray-500 cursor-pointer select-none px-3 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                                <input type="checkbox" checked={showAllDates} onChange={e => setShowAllDates(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
+                                عرض كل التواريخ
+                            </label>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <button onClick={handleExportExcel} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-50 transition-all active:scale-95"><FileSpreadsheet size={16}/> تصدير Excel</button>
+                            <button onClick={handleBulkApprove} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-indigo-800 shadow-lg shadow-indigo-50 transition-all active:scale-95"><CheckCircle size={16}/> مصادقة جماعية</button>
+                        </div>
+                   </div>
                 </div>
-                <div className="flex-1 overflow-auto">
-                    <table className="w-full text-right text-sm min-w-[900px]">
-                        <thead className="bg-white sticky top-0 shadow-sm text-gray-600 z-10 font-bold">
+
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                    <table className="w-full text-right text-sm min-w-[1000px]">
+                        <thead className="bg-white sticky top-0 shadow-sm text-gray-600 z-10 font-bold border-b border-gray-200">
                             <tr>
-                                <th className="p-4 bg-gray-50 border-b">الوقت والتاريخ</th>
-                                <th className="p-4 bg-gray-50 border-b">المستخدم</th>
-                                <th className="p-4 bg-gray-50 border-b">نوع المهمة</th>
-                                <th className="p-4 bg-gray-50 border-b">النشاط / المهمة</th>
-                                <th className="p-4 bg-gray-50 border-b">الحالة</th>
-                                <th className="p-4 bg-gray-50 border-b">الاعتماد</th>
-                                <th className="p-4 bg-gray-50 border-b">أدوات</th>
+                                <th onClick={() => requestSort('logDate')} className="p-5 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-2">الوقت والتاريخ {getSortIcon('logDate')}</div>
+                                </th>
+                                <th onClick={() => requestSort('empName')} className="p-5 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-2">الموظف {getSortIcon('empName')}</div>
+                                </th>
+                                <th onClick={() => requestSort('taskType')} className="p-5 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-2">النوع {getSortIcon('taskType')}</div>
+                                </th>
+                                <th className="p-5 bg-gray-50/50">النشاط / المهمة</th>
+                                <th onClick={() => requestSort('status')} className="p-5 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-2">التنفيذ {getSortIcon('status')}</div>
+                                </th>
+                                <th onClick={() => requestSort('approvalStatus')} className="p-5 bg-gray-50/50 cursor-pointer hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-2">الاعتماد {getSortIcon('approvalStatus')}</div>
+                                </th>
+                                <th className="p-5 bg-gray-50/50 text-center">أدوات</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -803,41 +904,82 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 const isValidDate = !isNaN(logDateVal.getTime());
                                 const displayDate = isValidDate ? logDateVal.toLocaleDateString('ar-EG') : 'تاريخ غير صالح';
                                 return (
-                                    <tr key={log.id} className={`hover:bg-gray-50 ${log.approvalStatus === 'Rejected' ? 'bg-red-50' : ''}`}>
-                                        <td className="p-4 font-mono text-xs text-gray-500" dir="ltr">{displayDate}</td>
-                                        <td className="p-4 font-bold text-gray-700">{empName}</td>
-                                        <td className="p-4 text-xs font-bold text-gray-600">
-                                            {log.taskType === 'Daily' && 'روتينية'}
-                                            {log.taskType === 'Extra' && 'إضافية'}
-                                            {log.status === 'Leave' && 'إجازة'}
+                                    <tr key={log.id} className={`hover:bg-indigo-50/30 transition-colors ${log.approvalStatus === 'Rejected' ? 'bg-red-50/50' : ''}`}>
+                                        <td className="p-5 font-mono text-xs text-gray-400" dir="ltr">{displayDate}</td>
+                                        <td className="p-5">
+                                            <div className="font-black text-gray-800">{empName}</div>
+                                            <div className="text-[10px] text-gray-400 font-bold uppercase">{log.employeeId}</div>
                                         </td>
-                                        <td className="p-4 text-gray-600 max-w-xs truncate" title={log.description}>{log.description}</td>
-                                        <td className="p-4">{log.status==='Completed'?<span className="text-green-600 font-bold text-xs">منفذة</span>:log.status==='Pending'?<span className="text-red-600 font-bold text-xs">غير منفذة</span>:log.status==='NotApplicable'?<span className="text-gray-400 font-bold text-xs">لا تنطبق</span>:log.status}</td>
-                                        <td className="p-4">
-                                            {log.approvalStatus === 'Approved' ? 
-                                              <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] font-bold border border-green-200 flex items-center gap-1 w-fit"><Check size={10}/> معتمد</span> : 
-                                              log.approvalStatus === 'Rejected' ?
-                                              <div className="group relative">
-                                                <span className="text-red-600 bg-red-50 px-2 py-0.5 rounded text-[10px] font-bold border border-red-200 flex items-center gap-1 w-fit cursor-help"><X size={10}/> مرفوض</span>
-                                                {log.managerNote && <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-xs p-2 rounded z-20 w-48">{log.managerNote}</div>}
-                                              </div> :
-                                              <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-bold border border-amber-200 flex items-center gap-1 w-fit"><AlertCircle size={10}/> معلق</span>
+                                        <td className="p-5">
+                                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${log.taskType === 'Daily' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'}`}>
+                                                {log.taskType === 'Daily' ? 'روتينية' : 'إضافية'}
+                                            </span>
+                                        </td>
+                                        <td className="p-5 text-gray-600 max-w-xs font-medium" title={log.description}>{log.description}</td>
+                                        <td className="p-5">
+                                            {log.status==='Completed' || log.status==='منفذة' ? 
+                                                <span className="text-emerald-600 font-black text-xs bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">منفذة</span> : 
+                                                log.status==='Pending' || log.status==='غير منفذة' ? 
+                                                <span className="text-red-600 font-black text-xs bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">غير منفذة</span> : 
+                                                log.status==='NotApplicable' || log.status==='لا تنطبق' ? 
+                                                <span className="text-gray-400 font-black text-xs bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">لا تنطبق</span> : 
+                                                <span className="text-orange-600 font-black text-xs bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100">{log.status}</span>
                                             }
                                         </td>
-                                        <td className="p-4 flex gap-2">
-                                            {log.approvalStatus === 'PendingApproval' && (
-                                                <>
-                                                 <button onClick={() => onApproveLog(log.id)} className="text-green-600 hover:bg-green-50 p-1.5 rounded border border-green-200" title="اعتماد"><Check size={16}/></button>
-                                                 <button onClick={() => handleSingleReject(log.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded border border-red-200" title="رفض"><X size={16}/></button>
-                                                </>
-                                            )}
-                                            <button onClick={()=>onDeleteLog(log.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
+                                        <td className="p-5">
+                                            {log.approvalStatus === 'Approved' ? 
+                                              <span className="text-emerald-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-emerald-200 flex items-center gap-1.5 w-fit shadow-sm"><Check size={12}/> معتمد</span> : 
+                                              log.approvalStatus === 'Rejected' ?
+                                              <div className="group relative">
+                                                <span className="text-red-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-red-200 flex items-center gap-1.5 w-fit cursor-help shadow-sm"><X size={12}/> مرفوض</span>
+                                                {log.managerNote && <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-[10px] p-3 rounded-xl z-20 w-48 shadow-2xl animate-fade-in">{log.managerNote}</div>}
+                                              </div> :
+                                              /* Fixed missing ShieldAlert and Clock icons */
+                                              log.approvalStatus === 'CommitmentPending' ?
+                                              <span className="text-amber-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-amber-200 flex items-center gap-1.5 w-fit shadow-sm animate-pulse"><ShieldAlert size={12}/> طلب التزام</span> :
+                                              <span className="text-blue-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-blue-200 flex items-center gap-1.5 w-fit shadow-sm"><Clock size={12}/> معلق</span>
+                                            }
+                                        </td>
+                                        <td className="p-5">
+                                            <div className="flex items-center justify-center gap-2">
+                                                {log.approvalStatus !== 'Approved' && (
+                                                    <>
+                                                        <button onClick={() => onApproveLog(log.id)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl border border-emerald-100 transition-colors" title="اعتماد"><Check size={18}/></button>
+                                                        <button onClick={() => handleSingleReject(log.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl border border-red-100 transition-colors" title="رفض"><X size={18}/></button>
+                                                    </>
+                                                )}
+                                                <button onClick={()=>onDeleteLog(log.id)} className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={18}/></button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
                             })}
+                            {filteredTaskLogs.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="p-20 text-center opacity-30">
+                                        <ClipboardList size={64} className="mx-auto mb-4" />
+                                        <p className="font-black text-lg text-gray-500">لا توجد سجلات تطابق خيارات التصفية الحالية</p>
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
+                </div>
+                
+                {/* Fixed Summary Bar */}
+                <div className="bg-gray-900 text-white p-4 flex justify-between items-center shadow-2xl">
+                    <div className="flex gap-6">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                            <span className="text-[10px] font-black uppercase opacity-70">إجمالي السجلات الحالية: {filteredTaskLogs.length}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-emerald-400">
+                            <span className="text-[10px] font-black uppercase">معتمدة: {filteredTaskLogs.filter(l => l.approvalStatus === 'Approved').length}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-red-400">
+                            <span className="text-[10px] font-black uppercase">مرفوضة: {filteredTaskLogs.filter(l => l.approvalStatus === 'Rejected').length}</span>
+                        </div>
+                    </div>
                 </div>
              </div>
         )}
@@ -954,6 +1096,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
         </div>
       )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f9fafb; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+      `}</style>
     </div>
   );
 };
