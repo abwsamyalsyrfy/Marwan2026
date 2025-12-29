@@ -68,7 +68,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
   const adherenceStatsForEmp = (empId: string) => {
     const empLogs = filteredLogs.filter(l => l.employeeId === empId);
     let grossDays = 0;
-    let presentDaysCount = 0; 
+    let registrationDaysCount = 0; 
     let weekendHolidays = 0;
     let manualLeaves = 0; 
 
@@ -96,16 +96,17 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
        } else if (isManualLeave) {
            manualLeaves++;
        } else if (dayLogs.length > 0) {
-           presentDaysCount++;
+           // أي سجل موجود في هذا اليوم يعني أنه يوم تسجيل
+           registrationDaysCount++;
        }
        cursor.setDate(cursor.getDate() + 1);
     }
 
     const totalLeaves = weekendHolidays + manualLeaves;
     const netWorkDays = Math.max(0, grossDays - totalLeaves);
-    const attendanceRate = netWorkDays > 0 ? Math.round((presentDaysCount / netWorkDays) * 100) : 0;
+    const attendanceRate = netWorkDays > 0 ? Math.round((registrationDaysCount / netWorkDays) * 100) : 0;
     
-    return { grossDays, netWorkDays, presentDays: presentDaysCount, totalLeaves, attendanceRate, manualLeaves, weekendHolidays };
+    return { grossDays, netWorkDays, registrationDays: registrationDaysCount, totalLeaves, attendanceRate, manualLeaves, weekendHolidays };
   };
 
   const individualAdherence = useMemo(() => adherenceStatsForEmp(selectedEmpId), [startDate, endDate, filteredLogs, selectedEmpId]);
@@ -146,11 +147,11 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         const pending = empOwnLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
         const na = empOwnLogs.filter(l => isNotApplicableStatus(l.status)).length;
         
-        // حساب إجمالي المهام المتوقعة بناءً على عدد المهام الروتينية المسندة مضروباً في أيام العمل
+        // حساب إجمالي المهام المتوقعة = (عدد المهام الروتينية المسندة × صافي أيام العمل)
         const assignedRoutineTaskCount = assignments.filter(a => a.employeeId === emp.id).length;
         const totalExpectedTasks = assignedRoutineTaskCount * stats.netWorkDays;
         
-        // نسبة الكفاءة = (المهام المنفذة ÷ إجمالي المهام المتوقعة)
+        // نسبة الكفاءة = (إجمالي المهام المنفذة ÷ إجمالي المهام المتوقعة)
         const rate = totalExpectedTasks > 0 ? (completedCount / totalExpectedTasks) * 100 : 0;
         
         return { 
@@ -161,7 +162,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
             na, 
             rate, 
             netWorkDays: stats.netWorkDays,
-            daysPresent: stats.presentDays 
+            daysRegistered: stats.registrationDays 
         };
       }).sort((a, b) => b.rate - a.rate);
   }, [employees, filteredLogs, selectedComparisonIds, startDate, endDate, assignments]);
@@ -181,15 +182,15 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
           csvContent += `"${new Date(log.logDate).toLocaleDateString('ar-EG')}","${selectedEmployee.name}","${log.description}","${log.status}"\n`;
         });
     } else {
-        csvContent += "الترتيب,الموظف,أيام العمل المتوقعة,أيام التسجيل,المهام المنفذة,الغير منفذة,لا تنطبق,نسبة الكفاءة\n";
+        csvContent += "الترتيب,الموظف,أيام العمل المتوقعة,أيام التسجيل,المنفذة,غير المنفذة,لا تنطبق,نسبة الكفاءة\n";
         comparisonData.forEach((d, idx) => {
-            csvContent += `"${idx + 1}","${d.name}","${d.netWorkDays}","${d.daysPresent}","${d.completed}","${d.pending}","${d.na}","${d.rate.toFixed(1)}%"\n`;
+            csvContent += `"${idx + 1}","${d.name}","${d.netWorkDays}","${d.daysRegistered}","${d.completed}","${d.pending}","${d.na}","${d.rate.toFixed(1)}%"\n`;
         });
     }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Performance_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `Competitive_Report_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
@@ -292,7 +293,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                     <div className="flex items-center gap-3 mb-6"><div className="w-2 h-8 bg-blue-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">مؤشرات الحضور والالتزام</h4></div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                         <AnalyticCard label="أيام العمل الفعلية" value={individualAdherence.netWorkDays} icon={<Briefcase size={22}/>} color="blue" />
-                        <AnalyticCard label="التقارير المرفوعة" value={individualAdherence.presentDays} icon={<Activity size={22}/>} color="green" />
+                        <AnalyticCard label="أيام التسجيل الفعلي" value={individualAdherence.registrationDays} icon={<Activity size={22}/>} color="green" />
                         <AnalyticCard label="إجمالي الإجازات" value={individualAdherence.totalLeaves} icon={<Clock size={22}/>} color="orange" tooltip="تشمل الخميس والجمعة تلقائياً" />
                         <StatCardPercentage label="نسبة الالتزام" value={individualAdherence.attendanceRate} />
                     </div>
@@ -325,7 +326,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                     <h5 className="font-black text-gray-800 text-lg group-hover:text-indigo-600 transition-colors">{data.name}</h5>
                                     <div className="flex items-center gap-3 mt-1">
                                         <p className="text-[10px] font-black text-indigo-500 uppercase">الكفاءة: {data.rate.toFixed(1)}%</p>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase">التقارير: {data.completed}</p>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase">المنجز: {data.completed}</p>
                                     </div>
                                 </div>
                                 {idx === 0 && <Star className="text-amber-500 animate-pulse" fill="currentColor" size={24} />}
@@ -366,7 +367,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                         <th className="px-6 py-5 text-center">أيام العمل المتوقعة</th>
                                         <th className="px-6 py-5 text-center">أيام التسجيل</th>
                                         <th className="px-6 py-5 text-center">المهام المنفذة</th>
-                                        <th className="px-6 py-5 text-center">الغير منفذة</th>
+                                        <th className="px-6 py-5 text-center">غير منفذة</th>
                                         <th className="px-6 py-5 text-center">لا تنطبق</th>
                                         <th className="px-6 py-5 text-center">نسبة الكفاءة</th>
                                     </tr>
@@ -376,7 +377,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                         <tr key={data.id} className="hover:bg-indigo-50/50 transition-colors">
                                             <td className="px-6 py-5 font-black text-gray-800">{data.name}</td>
                                             <td className="px-6 py-5 text-center font-bold text-gray-500">{data.netWorkDays}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-blue-600">{data.daysPresent}</td>
+                                            <td className="px-6 py-5 text-center font-bold text-blue-600">{data.daysRegistered}</td>
                                             <td className="px-6 py-5 text-center font-bold text-emerald-600">{data.completed}</td>
                                             <td className="px-6 py-5 text-center font-bold text-red-500">{data.pending}</td>
                                             <td className="px-6 py-5 text-center font-bold text-gray-400">{data.na}</td>
