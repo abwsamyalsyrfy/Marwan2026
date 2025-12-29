@@ -1,8 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { Employee, Task, Assignment, TaskLog, SystemAuditLog, PERMISSIONS, Announcement } from '../types';
-// Added ShieldAlert and Clock to the lucide-react imports to resolve "Cannot find name" errors.
-import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send, UserMinus, ChevronUp, ChevronDown, ListFilter, ShieldAlert, Clock } from 'lucide-react';
+import { Database, Upload, Users, ClipboardList, FileDown, Check, History, Link, Plus, Trash2, Pencil, X, AlertTriangle, Shield, Key, Search, Calendar, Filter, Settings, AlertOctagon, RotateCcw, Lock, FileSpreadsheet, Server, Activity, UserCheck, UserX, CheckCircle, AlertCircle, CheckSquare, Download, Megaphone, Send, UserMinus, ChevronUp, ChevronDown, ListFilter, ShieldAlert, Clock, CalendarDays, MinusCircle, XCircle, CheckCircle2 } from 'lucide-react';
 // @ts-ignore
 import { read, utils, writeFile } from 'xlsx';
 
@@ -46,15 +45,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   
   // New Filter States for Task Logs
-  const [logStatusFilter, setLogStatusFilter] = useState('All'); // Status: Completed, Pending, etc.
-  const [logApprovalFilter, setLogApprovalFilter] = useState('All'); // Approval: Approved, Rejected, PendingApproval
-  const [logTypeFilter, setLogTypeFilter] = useState('All'); // Type: Daily, Extra
+  const [logStatusFilter, setLogStatusFilter] = useState('All'); 
+  const [logApprovalFilter, setLogApprovalFilter] = useState('All'); 
+  const [logTypeFilter, setLogTypeFilter] = useState('All'); 
   const [sortConfig, setSortConfig] = useState<{ key: keyof TaskLog | 'empName', direction: 'asc' | 'desc' } | null>({ key: 'logDate', direction: 'desc' });
 
   const [logStartDate, setLogStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]); 
   const [logEndDate, setLogEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [importType, setImportType] = useState<'employees' | 'tasks' | 'assignments' | 'logs'>('employees');
   const [showAllDates, setShowAllDates] = useState(false);
+
+  // Past Log State
+  const [isPastLogModalOpen, setIsPastLogModalOpen] = useState(false);
+  const [pastLogStep, setPastLogStep] = useState<1 | 2>(1);
+  const [selectedPastEmpId, setSelectedPastEmpId] = useState('');
+  const [selectedPastDate, setSelectedPastDate] = useState(new Date().toISOString().split('T')[0]);
+  const [pastTaskDecisions, setPastTaskDecisions] = useState<Record<string, 'Completed' | 'Pending' | 'NotApplicable'>>({});
 
   // Announcement Form State
   const [annTitle, setAnnTitle] = useState('');
@@ -98,10 +104,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         const empId = l.employeeId || '';
         const empName = employees.find(e => e.id === l.employeeId)?.name || '';
         
-        // Search Filter
         const matchesSearch = desc.includes(searchTerm) || empId.includes(searchTerm) || empName.includes(searchTerm);
         
-        // Date Filter
         let matchesDate = true;
         if (!showAllDates) {
             try {
@@ -115,19 +119,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             } catch (e) { matchesDate = false; }
         }
 
-        // Status Filter (Execution)
         const matchesStatus = logStatusFilter === 'All' || l.status === logStatusFilter;
-
-        // Approval Filter
         const matchesApproval = logApprovalFilter === 'All' || l.approvalStatus === logApprovalFilter;
-
-        // Type Filter
         const matchesType = logTypeFilter === 'All' || l.taskType === logTypeFilter;
 
         return matchesSearch && matchesDate && matchesStatus && matchesApproval && matchesType;
     });
 
-    // Sorting
     if (sortConfig) {
         result.sort((a, b) => {
             let aValue: any = a[sortConfig.key as keyof TaskLog];
@@ -200,7 +198,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleToggleTargetEmployee = (empId: string) => {
-    // Fixed Error: Changed 'id' to 'empId' in the spread operator to correctly add the selected employee ID.
     setSelectedTargetEmployeeIds(prev => 
       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
     );
@@ -428,6 +425,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
        }
     }
     setIsModalOpen(false);
+  };
+
+  const handlePastLogSubmit = () => {
+    if (!selectedPastEmpId || !selectedPastDate) {
+      alert('يرجى اختيار الموظف والتاريخ أولاً.');
+      return;
+    }
+    setPastLogStep(2);
+  };
+
+  const handleSavePastLogFinal = async () => {
+    const empAssignments = assignments.filter(a => a.employeeId === selectedPastEmpId);
+    if (empAssignments.length === 0) {
+      alert('هذا الموظف ليس لديه مهام روتينية معينة.');
+      setIsPastLogModalOpen(false);
+      return;
+    }
+
+    const newLogs: TaskLog[] = empAssignments.map(asg => {
+      const taskDef = tasks.find(t => t.id === asg.taskId);
+      return {
+        id: `LOG-PAST-${Date.now()}-${Math.random()}`,
+        logDate: new Date(selectedPastDate).toISOString(),
+        employeeId: selectedPastEmpId,
+        taskId: asg.taskId,
+        taskType: 'Daily',
+        status: pastTaskDecisions[asg.taskId] || 'Pending',
+        description: taskDef?.description || 'مهمة روتينية',
+        approvalStatus: 'Approved', // Auto-approved as Admin is logging it
+        approvedBy: 'مدير النظام (يدوي)',
+        approvedAt: new Date().toISOString()
+      };
+    });
+
+    onImport(newLogs, 'logs');
+    alert(`تم تسجيل ${newLogs.length} مهام بنجاح للموظف في تاريخ ${selectedPastDate}`);
+    
+    // Reset state
+    setIsPastLogModalOpen(false);
+    setPastLogStep(1);
+    setSelectedPastEmpId('');
+    setPastTaskDecisions({});
   };
 
   const renderModalContent = () => {
@@ -808,18 +847,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
         )}
 
-        {/* === TASK LOGS TAB (UPDATED WITH ADVANCED FILTERS) === */}
+        {/* === TASK LOGS TAB === */}
         {activeTab === 'task_logs' && (
              <div className="flex flex-col h-full bg-white">
                 <div className="p-5 border-b border-gray-100 bg-gray-50/80 space-y-4">
                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-center">
-                        {/* Search */}
                         <div className="xl:col-span-4 relative">
                             <input type="text" placeholder="بحث بالوصف، اسم الموظف..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
                             <Search className="absolute right-3 top-3 text-gray-400" size={18} />
                         </div>
 
-                        {/* Filters Row */}
                         <div className="xl:col-span-8 flex flex-wrap gap-3 items-center">
                             <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
                                 <ListFilter size={14} className="text-indigo-500" />
@@ -868,6 +905,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                         
                         <div className="flex gap-2">
+                            <button onClick={() => setIsPastLogModalOpen(true)} className="bg-amber-600 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-amber-700 shadow-lg shadow-amber-50 transition-all active:scale-95"><CalendarDays size={16}/> تسجيل المهام الفائتة</button>
                             <button onClick={handleExportExcel} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-50 transition-all active:scale-95"><FileSpreadsheet size={16}/> تصدير Excel</button>
                             <button onClick={handleBulkApprove} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-indigo-800 shadow-lg shadow-indigo-50 transition-all active:scale-95"><CheckCircle size={16}/> مصادقة جماعية</button>
                         </div>
@@ -934,7 +972,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                                 <span className="text-red-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-red-200 flex items-center gap-1.5 w-fit cursor-help shadow-sm"><X size={12}/> مرفوض</span>
                                                 {log.managerNote && <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-[10px] p-3 rounded-xl z-20 w-48 shadow-2xl animate-fade-in">{log.managerNote}</div>}
                                               </div> :
-                                              /* Fixed missing ShieldAlert and Clock icons */
                                               log.approvalStatus === 'CommitmentPending' ?
                                               <span className="text-amber-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-amber-200 flex items-center gap-1.5 w-fit shadow-sm animate-pulse"><ShieldAlert size={12}/> طلب التزام</span> :
                                               <span className="text-blue-600 bg-white px-3 py-1.5 rounded-xl text-[10px] font-black border border-blue-200 flex items-center gap-1.5 w-fit shadow-sm"><Clock size={12}/> معلق</span>
@@ -966,7 +1003,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </table>
                 </div>
                 
-                {/* Fixed Summary Bar */}
                 <div className="bg-gray-900 text-white p-4 flex justify-between items-center shadow-2xl">
                     <div className="flex gap-6">
                         <div className="flex items-center gap-2">
@@ -1079,6 +1115,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         )}
       </div>
 
+      {/* Main Item Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 animate-fade-in">
@@ -1094,6 +1131,122 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                 </form>
             </div>
+        </div>
+      )}
+
+      {/* Past Log Modal */}
+      {isPastLogModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100">
+            <div className="bg-amber-600 p-8 text-white">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-black mb-1">تسجيل مهام فائتة</h3>
+                  <p className="text-amber-100 text-xs font-bold uppercase tracking-widest">إدخال يدوي من قبل مدير النظام</p>
+                </div>
+                <button onClick={() => {setIsPastLogModalOpen(false); setPastLogStep(1);}} className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-colors"><X size={24}/></button>
+              </div>
+            </div>
+
+            <div className="p-8">
+              {pastLogStep === 1 ? (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">اختيار الموظف</label>
+                    <select 
+                      value={selectedPastEmpId} 
+                      onChange={e => setSelectedPastEmpId(e.target.value)}
+                      className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-amber-500 outline-none font-bold text-sm"
+                    >
+                      <option value="">اختر الموظف...</option>
+                      {employees.filter(e => e.active).map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name} ({emp.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mr-1">تاريخ التسجيل الفائت</label>
+                    <input 
+                      type="date" 
+                      value={selectedPastDate}
+                      onChange={e => setSelectedPastDate(e.target.value)}
+                      className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-amber-500 outline-none font-bold text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-4 pt-4">
+                    <button type="button" onClick={() => setIsPastLogModalOpen(false)} className="flex-1 py-4 bg-gray-50 text-gray-500 rounded-2xl font-black hover:bg-gray-100 transition-all">إلغاء</button>
+                    <button 
+                      onClick={handlePastLogSubmit}
+                      className="flex-2 py-4 bg-amber-600 text-white rounded-2xl font-black hover:bg-amber-700 shadow-xl shadow-amber-100 transition-all"
+                    >
+                      تأكيد الاختيارات
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between mb-4 bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                    <div>
+                      <p className="text-[10px] font-black text-amber-600 uppercase">الموظف المختار</p>
+                      <p className="text-sm font-black text-gray-800">{employees.find(e => e.id === selectedPastEmpId)?.name}</p>
+                    </div>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black text-amber-600 uppercase">التاريخ المحدد</p>
+                      <p className="text-sm font-black text-gray-800">{selectedPastDate}</p>
+                    </div>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                    {assignments.filter(a => a.employeeId === selectedPastEmpId).map(asg => {
+                      const task = tasks.find(t => t.id === asg.taskId);
+                      const currentStatus = pastTaskDecisions[asg.taskId];
+                      return (
+                        <div key={asg.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <p className="text-xs font-bold text-gray-800 flex-1">{task?.description}</p>
+                          <div className="flex gap-2 shrink-0">
+                            <button 
+                              onClick={() => setPastTaskDecisions(prev => ({...prev, [asg.taskId]: 'Completed'}))}
+                              className={`p-2 rounded-xl border transition-all ${currentStatus === 'Completed' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-gray-400 border-gray-200 hover:border-emerald-200'}`}
+                              title="منفذة"
+                            >
+                              <CheckCircle2 size={18} />
+                            </button>
+                            <button 
+                              onClick={() => setPastTaskDecisions(prev => ({...prev, [asg.taskId]: 'Pending'}))}
+                              className={`p-2 rounded-xl border transition-all ${currentStatus === 'Pending' ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-gray-400 border-gray-200 hover:border-red-200'}`}
+                              title="غير منفذة"
+                            >
+                              <XCircle size={18} />
+                            </button>
+                            <button 
+                              onClick={() => setPastTaskDecisions(prev => ({...prev, [asg.taskId]: 'NotApplicable'}))}
+                              className={`p-2 rounded-xl border transition-all ${currentStatus === 'NotApplicable' ? 'bg-gray-600 text-white border-gray-600 shadow-md' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'}`}
+                              title="لا تنطبق"
+                            >
+                              <MinusCircle size={18} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {assignments.filter(a => a.employeeId === selectedPastEmpId).length === 0 && (
+                      <p className="text-center py-10 text-gray-400 font-bold italic">لا توجد مهام روتينية مسندة لهذا الموظف.</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button onClick={() => setPastLogStep(1)} className="flex-1 py-4 bg-gray-50 text-gray-500 rounded-2xl font-black hover:bg-gray-100 transition-all">رجوع</button>
+                    <button 
+                      onClick={handleSavePastLogFinal}
+                      className="flex-2 py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all"
+                    >
+                      حفظ السجلات الفائتة
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
