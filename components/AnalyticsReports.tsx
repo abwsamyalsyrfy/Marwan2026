@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo } from 'react';
 import { Employee, TaskLog, Task, Assignment } from '../types';
-import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Activity, Clock, Star, Zap, Search, Filter, CheckSquare, Square, BarChart2 } from 'lucide-react';
+import { Printer, Calendar, Briefcase, FileSpreadsheet, TrendingUp, Users, CheckCircle, Info, Activity, Clock, Star, Zap, Search, Filter, CheckSquare, Square, BarChart2, ChevronLeft } from 'lucide-react';
 
 interface AnalyticsReportsProps {
   employees: Employee[];
@@ -269,22 +268,22 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
       </div>
 
       {/* Main Report Body */}
-      <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-gray-200 print:shadow-none print:border-none relative overflow-hidden">
+      <div className="bg-white p-6 md:p-10 rounded-[2.5rem] shadow-xl border border-gray-200 print:shadow-none print:border-none relative overflow-hidden">
         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-50 rounded-bl-full opacity-50 -mr-16 -mt-16 pointer-events-none"></div>
         
         <div className="border-b-2 border-gray-100 pb-10 mb-10 flex flex-col md:flex-row justify-between items-start gap-8 relative z-10">
            <div className="flex items-center gap-6">
              <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-3xl font-black shadow-xl shadow-indigo-100">ن</div>
              <div>
-                <h2 className="text-3xl font-black text-gray-900 tracking-tight">{viewMode === 'individual' ? 'تقرير التقييم الفردي الدقيق' : 'تحليل الأداء التنافسي'}</h2>
+                <h2 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">{viewMode === 'individual' ? 'تقرير التقييم الفردي الدقيق' : 'تحليل الأداء التنافسي'}</h2>
                 <p className="text-gray-500 font-bold mt-2 flex items-center gap-2"><Calendar size={16} /> من {startDate.toLocaleDateString('ar-EG')} إلى {endDate.toLocaleDateString('ar-EG')}</p>
              </div>
            </div>
            {viewMode === 'individual' && selectedEmployee && (
-            <div className="bg-gray-50 px-8 py-5 rounded-[2rem] border border-gray-100 flex items-center gap-6 shadow-inner">
-                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center border border-indigo-100 shadow-sm"><Users size={28} className="text-indigo-600" /></div>
+            <div className="bg-gray-50 px-8 py-5 rounded-[2rem] border border-gray-100 flex items-center gap-6 shadow-inner w-full md:w-auto">
+                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center border border-indigo-100 shadow-sm shrink-0"><Users size={28} className="text-indigo-600" /></div>
                 <div>
-                    <h3 className="text-2xl font-black text-gray-900 leading-tight">{selectedEmployee.name}</h3>
+                    <h3 className="text-xl md:text-2xl font-black text-gray-900 leading-tight">{selectedEmployee.name}</h3>
                     <p className="text-indigo-500 font-black text-xs mt-1 uppercase tracking-widest">{selectedEmployee.jobTitle}</p>
                 </div>
             </div>
@@ -296,7 +295,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                 {/* Statistics Grid */}
                 <div>
                     <div className="flex items-center gap-3 mb-6"><div className="w-2 h-8 bg-blue-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">مؤشرات الحضور والالتزام</h4></div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         <AnalyticCard label="أيام العمل الفعلية" value={individualAdherence.netWorkDays} icon={<Briefcase size={22}/>} color="blue" />
                         <AnalyticCard label="أيام التسجيل الفعلي" value={individualAdherence.registrationDays} icon={<Activity size={22}/>} color="green" />
                         <AnalyticCard label="إجمالي الإجازات" value={individualAdherence.totalLeaves} icon={<Clock size={22}/>} color="orange" tooltip="تشمل الخميس والجمعة تلقائياً" />
@@ -318,7 +317,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
             <div className="space-y-12 relative z-10">
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3"><div className="w-2 h-8 bg-indigo-500 rounded-full"></div><h4 className="text-xl font-black text-gray-900">لوحة الصدارة والتميز البياني</h4></div>
-                    <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 font-black text-xs"><BarChart2 size={16} /> رسم بياني حي</div>
+                    <div className="hidden sm:flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 font-black text-xs"><BarChart2 size={16} /> رسم بياني حي</div>
                 </div>
                 
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
@@ -326,7 +325,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                         <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">أفضل 5 موظفين أداءً</h5>
                         {comparisonData.slice(0, 5).map((data, idx) => (
                             <div key={data.id} className="bg-white border border-gray-100 p-6 rounded-[2rem] shadow-sm flex items-center gap-6 group hover:border-indigo-200 transition-all hover:-translate-y-1">
-                                <div className={`w-12 h-12 flex items-center justify-center rounded-2xl font-black text-xl shadow-inner ${idx === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>{idx + 1}</div>
+                                <div className={`w-12 h-12 flex items-center justify-center rounded-2xl font-black text-xl shadow-inner shrink-0 ${idx === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>{idx + 1}</div>
                                 <div className="flex-1">
                                     <h5 className="font-black text-gray-800 text-lg group-hover:text-indigo-600 transition-colors">{data.name}</h5>
                                     <div className="flex items-center gap-3 mt-1">
@@ -334,23 +333,23 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                         <p className="text-[10px] font-black text-gray-400 uppercase">المنجز: {data.completed}</p>
                                     </div>
                                 </div>
-                                {idx === 0 && <Star className="text-amber-500 animate-pulse" fill="currentColor" size={24} />}
+                                {idx === 0 && <Star className="text-amber-500 animate-pulse shrink-0" fill="currentColor" size={24} />}
                             </div>
                         ))}
                     </div>
                     
                     <div className="xl:col-span-8 space-y-8">
                         {/* Interactive Bar Chart for Comparison */}
-                        <div className="bg-gray-50 rounded-[3rem] p-8 border border-gray-100 shadow-inner">
+                        <div className="bg-gray-50 rounded-[3rem] p-6 md:p-8 border border-gray-100 shadow-inner">
                             <h5 className="text-sm font-black text-gray-700 mb-8 flex items-center gap-2"><Zap size={16} className="text-amber-500" /> تحليل مقارنة نسب الإنجاز</h5>
                             <div className="space-y-6">
                                 {comparisonData.slice(0, 8).map((data) => (
                                     <div key={data.id} className="group">
-                                        <div className="flex justify-between items-center mb-2 px-1">
-                                            <span className="text-xs font-black text-gray-700">{data.name}</span>
-                                            <span className="text-xs font-black text-indigo-600">{data.rate.toFixed(1)}%</span>
+                                        <div className="flex justify-between items-center mb-2 px-1 text-[10px] md:text-xs">
+                                            <span className="font-black text-gray-700">{data.name}</span>
+                                            <span className="font-black text-indigo-600">{data.rate.toFixed(1)}%</span>
                                         </div>
-                                        <div className="h-4 w-full bg-white rounded-full overflow-hidden border border-gray-200 shadow-inner flex">
+                                        <div className="h-3 md:h-4 w-full bg-white rounded-full overflow-hidden border border-gray-200 shadow-inner flex">
                                             <div 
                                                 className={`h-full transition-all duration-1000 ease-out relative ${data.rate >= 90 ? 'bg-emerald-500' : data.rate >= 70 ? 'bg-indigo-500' : 'bg-amber-500'}`} 
                                                 style={{ width: `${data.rate}%` }}
@@ -363,39 +362,47 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                             </div>
                         </div>
 
-                        {/* Detailed Table */}
-                        <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-lg overflow-x-auto">
-                            <table className="w-full text-right text-sm min-w-[850px]">
-                                <thead className="bg-gray-900 text-white font-black">
-                                    <tr>
-                                        <th className="px-6 py-5">الموظف</th>
-                                        <th className="px-6 py-5 text-center">أيام العمل المتوقعة</th>
-                                        <th className="px-6 py-5 text-center">أيام التسجيل</th>
-                                        <th className="px-6 py-5 text-center">المنفذة</th>
-                                        <th className="px-6 py-5 text-center">غير منفذة</th>
-                                        <th className="px-6 py-5 text-center">لا تنطبق</th>
-                                        <th className="px-6 py-5 text-center">نسبة الكفاءة</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {comparisonData.map((data) => (
-                                        <tr key={data.id} className="hover:bg-indigo-50/50 transition-colors">
-                                            <td className="px-6 py-5 font-black text-gray-800">{data.name}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-gray-500">{data.netWorkDays}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-blue-600">{data.daysRegistered}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-emerald-600">{data.completed}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-red-500">{data.pending}</td>
-                                            <td className="px-6 py-5 text-center font-bold text-gray-400">{data.na}</td>
-                                            <td className="px-6 py-5 text-center">
-                                                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-xl font-black text-xs">{data.rate.toFixed(1)}%</div>
-                                            </td>
+                        {/* Detailed Table Container - Responsive with horizontal scroll */}
+                        <div className="relative">
+                            <div className="overflow-x-auto rounded-[2rem] border border-gray-200 bg-white shadow-lg custom-scrollbar">
+                                <table className="w-full text-right text-xs md:text-sm min-w-[700px] lg:min-w-full">
+                                    <thead className="bg-gray-900 text-white font-black">
+                                        <tr>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 whitespace-nowrap">الموظف</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">أيام العمل</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">أيام التسجيل</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">المنفذة</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">غير منفذة</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">لا تنطبق</th>
+                                            <th className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">نسبة الكفاءة</th>
                                         </tr>
-                                    ))}
-                                    {comparisonData.length === 0 && (
-                                        <tr><td colSpan={7} className="p-20 text-center text-gray-400 font-bold">يرجى تحديد موظف واحد على الأقل للعرض</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 font-medium">
+                                        {comparisonData.map((data) => (
+                                            <tr key={data.id} className="hover:bg-indigo-50/50 transition-colors">
+                                                <td className="px-4 md:px-6 py-4 md:py-5 font-black text-gray-800 whitespace-nowrap">{data.name}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center font-bold text-gray-500">{data.netWorkDays}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center font-bold text-blue-600">{data.daysRegistered}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center font-bold text-emerald-600">{data.completed}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center font-bold text-red-500">{data.pending}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center font-bold text-gray-400">{data.na}</td>
+                                                <td className="px-4 md:px-6 py-4 md:py-5 text-center whitespace-nowrap">
+                                                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-xl font-black text-[10px] md:text-xs">{data.rate.toFixed(1)}%</div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {comparisonData.length === 0 && (
+                                            <tr><td colSpan={7} className="p-20 text-center text-gray-400 font-bold">يرجى تحديد موظف واحد على الأقل للعرض</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Decorative hint for mobile scroll */}
+                            <div className="lg:hidden text-center mt-3 animate-pulse">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center justify-center gap-1">
+                                    مرر لليسار لمشاهدة باقي البيانات <ChevronLeft size={10} />
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -407,6 +414,13 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.3em]">تاريخ الاستخراج {new Date().toLocaleString('ar-EG')}</p>
         </div>
       </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f9fafb; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+      `}</style>
     </div>
   );
 }
@@ -424,9 +438,9 @@ const AnalyticCard: React.FC<{ label: string, value: string | number, icon: Reac
         <div className={`${config.bg} p-6 rounded-[2rem] border ${config.border} flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group`}>
             <div className={`mb-3 p-2.5 rounded-2xl bg-white shadow-sm ${config.text}`}>{icon}</div>
             <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1 opacity-80">{label}</p>
-            <p className={`text-3xl font-black ${config.text.replace('600', '800')}`}>{value}</p>
+            <p className={`text-2xl md:text-3xl font-black ${config.text.replace('600', '800')}`}>{value}</p>
             {tooltip && (
-                <div className="absolute -top-2 bg-gray-900 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                <div className="absolute -top-2 bg-gray-900 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20">
                     {tooltip}
                 </div>
             )}
@@ -439,7 +453,7 @@ const StatCardPercentage: React.FC<{ label: string, value: number }> = ({ label,
     return (
         <div className={`${colorClass} p-6 rounded-[2rem] text-white shadow-xl flex flex-col items-center justify-center text-center transition-transform hover:scale-105`}>
             <p className="text-[10px] font-black opacity-80 uppercase tracking-widest mb-1">{label}</p>
-            <p className="text-4xl font-black">{value}%</p>
+            <p className="text-3xl md:text-4xl font-black">{value}%</p>
         </div>
     );
 };
@@ -451,33 +465,33 @@ const TaskPerformanceCard: React.FC<{ item: any }> = ({ item }) => {
                   rate >= 60 ? { l: 'جيد', c: 'bg-amber-100 text-amber-700' } : { l: 'ضعيف', c: 'bg-red-100 text-red-700' };
 
     return (
-        <div className="bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+        <div className="bg-white border border-gray-100 rounded-[2rem] p-6 md:p-8 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
             <div className="flex justify-between items-start mb-6">
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                         <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2.5 py-1 rounded-lg uppercase tracking-wider">{item.category}</span>
                         <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${badge.c}`}>{badge.l}</span>
                     </div>
-                    <h5 className="font-black text-gray-800 text-lg leading-snug group-hover:text-indigo-600 transition-colors">{item.desc}</h5>
+                    <h5 className="font-black text-gray-800 text-base md:text-lg leading-snug group-hover:text-indigo-600 transition-colors">{item.desc}</h5>
                 </div>
-                <div className="text-right ml-4"><span className="text-4xl font-black text-gray-900">{rate}%</span></div>
+                <div className="text-right ml-4 shrink-0"><span className="text-3xl md:text-4xl font-black text-gray-900">{rate}%</span></div>
             </div>
             <div className="space-y-4">
-                <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
+                <div className="h-2.5 md:h-3 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
                     <div className={`h-full transition-all duration-1000 ${rate >= 90 ? 'bg-emerald-500' : rate >= 60 ? 'bg-indigo-500' : 'bg-red-500'}`} style={{ width: `${rate}%` }}></div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                     <div className="text-center p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
-                      <p className="text-[9px] font-black text-emerald-600 uppercase mb-0.5 tracking-tighter">منفذة</p>
-                      <p className="text-lg font-black text-emerald-800 leading-none">{item.completed}</p>
+                      <p className="text-[8px] md:text-[9px] font-black text-emerald-600 uppercase mb-0.5 tracking-tighter">منفذة</p>
+                      <p className="text-base md:text-lg font-black text-emerald-800 leading-none">{item.completed}</p>
                     </div>
                     <div className="text-center p-3 bg-red-50 rounded-2xl border border-red-100">
-                      <p className="text-[9px] font-black text-red-600 uppercase mb-0.5 tracking-tighter">غير منفذة</p>
-                      <p className="text-lg font-black text-red-800 leading-none">{item.pending}</p>
+                      <p className="text-[8px] md:text-[9px] font-black text-red-600 uppercase mb-0.5 tracking-tighter">غير منفذة</p>
+                      <p className="text-base md:text-lg font-black text-red-800 leading-none">{item.pending}</p>
                     </div>
                     <div className="text-center p-3 bg-gray-50 rounded-2xl border border-gray-100">
-                      <p className="text-[9px] font-black text-gray-500 uppercase mb-0.5 tracking-tighter">لا تنطبق</p>
-                      <p className="text-lg font-black text-gray-700 leading-none">{item.notApplicable}</p>
+                      <p className="text-[8px] md:text-[9px] font-black text-gray-500 uppercase mb-0.5 tracking-tighter">لا تنطبق</p>
+                      <p className="text-base md:text-lg font-black text-gray-700 leading-none">{item.notApplicable}</p>
                     </div>
                 </div>
             </div>
