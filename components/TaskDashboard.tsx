@@ -1,15 +1,14 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { TaskLog, Employee, TeamInsight, Assignment, Announcement, AnnouncementReply } from '../types';
+import { TaskLog, Employee, Assignment, Announcement, AnnouncementReply } from '../types';
 import { 
   BarChart3, CheckCircle2, RefreshCw, 
   CalendarCheck, Users, Clock, Check, X, 
-  Sparkles, Loader2, TrendingUp, Zap, Target, 
+  Loader2, TrendingUp, Zap, Target, 
   ChevronRight, ShieldCheck, MessageSquare,
   LayoutGrid, ListChecks, CalendarDays, AlertTriangle, AlertCircle, Megaphone, Heart, Send, Copy, EyeOff, ShieldAlert,
   CircleDot, XCircle, MinusCircle, User, Activity, CheckSquare
 } from 'lucide-react';
-import { getTeamPerformanceInsights } from '../services/geminiService';
 import { db } from '../services/db';
 
 interface TaskDashboardProps {
@@ -33,8 +32,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 }) => {
   const isAdmin = currentUser.role === 'Admin';
   
-  const [insights, setInsights] = useState<TeamInsight | null>(null);
-  const [loadingInsights, setLoadingInsights] = useState(false);
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   const [showReplies, setShowReplies] = useState<Record<string, boolean>>({});
   const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
@@ -45,26 +42,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   // Quick Announcement State
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [newAnn, setNewAnn] = useState({ title: '', content: '', priority: 'Normal' as const });
-
-  useEffect(() => {
-    const loadCached = async () => {
-      if (!isAdmin) return;
-      const cached = await db.insights.getLatest();
-      if (cached) setInsights(cached);
-    };
-    loadCached();
-  }, [isAdmin]);
-
-  const generateNewInsights = async () => {
-    if (!isAdmin || logs.length === 0) return;
-    setLoadingInsights(true);
-    try {
-      const data = await getTeamPerformanceInsights(logs, employees);
-      const insightWithTime: TeamInsight = { ...data, generatedAt: new Date().toISOString() };
-      await db.insights.save(insightWithTime);
-      setInsights(insightWithTime);
-    } catch (e) { console.error(e); } finally { setLoadingInsights(false); }
-  };
 
   const handleQuickApprove = async (logId: string) => {
     if (!onApproveLog) return;
@@ -100,14 +77,12 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     onAddAnnouncement(ann);
     setNewAnn({ title: '', content: '', priority: 'Normal' });
     setShowAnnModal(false);
-    // التحديث سيتم فورياً لأن onAddAnnouncement في App.tsx يقوم بـ setAnnouncements
   };
 
   const handleLike = async (annId: string, hasLiked: boolean) => {
     try {
-      // Optimistic UI could be added here, but db toggle + background onRefresh is usually fast enough
       await db.announcements.toggleLike(annId, currentUser.id, hasLiked);
-      onRefresh(); // ستقوم بجلب البيانات وتحديث الـ props مما يسبب إعادة رندر تلقائية
+      onRefresh(); 
     } catch (e) { console.error(e); }
   };
 
@@ -132,7 +107,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     };
 
     try {
-      setReplyInputs(prev => ({ ...prev, [annId]: '' })); // تصفير فوراً لتحسين UX
+      setReplyInputs(prev => ({ ...prev, [annId]: '' })); 
       await db.announcements.addReply(annId, newReply);
       onRefresh();
     } catch (e) { console.error(e); }
@@ -158,7 +133,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
     try {
       await onSaveLogs([newExtraLog]);
-      // سيختفي التعميم تلقائياً لأن relevantAnnouncements تعتمد على الـ logs المحدثة
     } catch (e) {
       console.error(e);
       alert('فشل تحويل التعميم لمهمة.');
@@ -834,84 +808,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
           </div>
         </div>
       </div>
-
-      {/* AI Strategic Insights */}
-      {isAdmin && (
-        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden border border-indigo-500/20 group">
-           <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity duration-1000"><Sparkles size={200} /></div>
-           <div className="relative z-10">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
-                 <div className="flex items-center gap-5">
-                    <div className="w-16 h-16 bg-white/10 backdrop-blur-2xl rounded-[1.5rem] flex items-center justify-center border border-white/20 shadow-inner">
-                      <Sparkles size={32} className="text-amber-400 animate-pulse" />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-black text-white">المستشار الاستراتيجي الذكي</h3>
-                      <p className="text-indigo-300 text-sm mt-1">تحليل أداء الفريق بواسطة Gemini AI</p>
-                    </div>
-                 </div>
-                 <button onClick={generateNewInsights} disabled={loadingInsights} className="flex items-center gap-3 px-8 py-3.5 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-2xl shadow-white/5 active:scale-95 disabled:opacity-50">
-                    {loadingInsights ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />} توليد تحليل جديد
-                 </button>
-              </div>
-              {loadingInsights ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-6 text-indigo-200">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full"></div>
-                    <Loader2 className="animate-spin relative" size={64} strokeWidth={3} />
-                  </div>
-                  <p className="font-bold text-xl tracking-wide animate-pulse">جاري فحص سجلات الفريق واستخراج التوصيات...</p>
-                </div>
-              ) : insights ? (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
-                   <div className="xl:col-span-7 space-y-8">
-                      <div className="bg-white/5 backdrop-blur-md p-10 rounded-[2.5rem] border border-white/10 shadow-2xl">
-                         <h4 className="text-amber-400 font-black mb-6 text-xs uppercase tracking-[0.3em] flex items-center gap-2"><ShieldCheck size={18} /> رؤية الأداء العام</h4>
-                         <p className="text-indigo-50 leading-relaxed text-xl font-medium">{insights.summary}</p>
-                         <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-2 gap-8">
-                            <div>
-                               <span className="text-[10px] text-indigo-400 font-black uppercase block mb-2 tracking-widest">مؤشر الإنتاجية</span>
-                               <div className="flex items-center gap-3">
-                                  <span className="text-5xl font-black">{insights.productivityScore}%</span>
-                                  <TrendingUp className="text-emerald-400" size={24} />
-                               </div>
-                            </div>
-                            <div>
-                               <span className="text-[10px] text-indigo-400 font-black uppercase block mb-2 tracking-widest">تحديات مرصودة</span>
-                               <div className="flex flex-wrap gap-2">
-                                  {insights.bottlenecks.map((b, i) => (
-                                    <span key={i} className="bg-red-500/10 text-red-200 border border-red-500/20 px-3 py-1.5 rounded-xl text-xs font-bold">{b}</span>
-                                  ))}
-                               </div>
-                            </div>
-                         </div>
-                      </div>
-                   </div>
-                   <div className="xl:col-span-5 bg-white/5 backdrop-blur-sm rounded-[2.5rem] p-8 border border-white/10">
-                      <h4 className="text-indigo-200 font-black mb-8 flex items-center gap-2 text-sm uppercase tracking-widest"><Zap size={20} className="text-amber-400" /> مهام مقترح أتمتتها</h4>
-                      <div className="space-y-4 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar">
-                        {insights.suggestedRoutineTasks.map((task, i) => (
-                          <div key={i} className="group bg-indigo-500/10 p-6 rounded-[1.5rem] border border-indigo-400/10 hover:border-indigo-400/40 hover:bg-indigo-500/20 transition-all duration-300">
-                             <p className="font-black text-white text-lg mb-3 group-hover:text-amber-300 transition-colors">{task.description}</p>
-                             <div className="flex gap-3">
-                                <MessageSquare size={16} className="text-indigo-400 shrink-0 mt-1" />
-                                <p className="text-indigo-300/80 text-xs italic leading-relaxed">{task.reason}</p>
-                             </div>
-                          </div>
-                        ))}
-                      </div>
-                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-24 bg-white/5 rounded-[3rem] border-2 border-dashed border-white/10">
-                   <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6"><LayoutGrid size={32} className="text-indigo-400" /></div>
-                   <p className="text-indigo-200 font-bold mb-8 text-lg">بانتظار البيانات لتوليد الرؤى الاستراتيجية للفريق</p>
-                   <button onClick={generateNewInsights} className="px-10 py-4 bg-white text-indigo-950 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-xl">تحليل السجلات الآن</button>
-                </div>
-              )}
-           </div>
-        </div>
-      )}
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
