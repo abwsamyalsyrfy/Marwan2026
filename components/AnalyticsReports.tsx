@@ -96,7 +96,6 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
        } else if (isManualLeave) {
            manualLeaves++;
        } else if (dayLogs.length > 0) {
-           // أي سجل موجود في هذا اليوم يعني أنه يوم تسجيل
            registrationDaysCount++;
        }
        cursor.setDate(cursor.getDate() + 1);
@@ -122,7 +121,9 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         const pending = relevantLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
         const notApplicable = relevantLogs.filter(l => isNotApplicableStatus(l.status)).length;
         
-        const rate = individualAdherence.netWorkDays > 0 ? Math.round((completed / individualAdherence.netWorkDays) * 100) : 0;
+        // حسبة الفردي: المقام هو أيام العمل مطروحاً منها أيام "لا تنطبق" لهذه المهمة تحديداً
+        const effectiveDays = Math.max(0, individualAdherence.netWorkDays - notApplicable);
+        const rate = effectiveDays > 0 ? Math.round((completed / effectiveDays) * 100) : 0;
 
         return { 
           taskId: task.id, 
@@ -134,7 +135,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
           category: task.category
         };
     }).sort((a, b) => b.rate - a.rate);
-  }, [filteredLogs, assignments, tasks, selectedEmpId, individualAdherence.netWorkDays]);
+  }, [filteredLogs, assignments, tasks, selectedEmpId, individualAdherence]);
 
   const comparisonData = useMemo(() => {
     return employees
@@ -144,22 +145,26 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         const empOwnLogs = filteredLogs.filter(l => l.employeeId === emp.id);
         
         const completedCount = empOwnLogs.filter(l => isCompletedStatus(l.status)).length;
-        const pending = empOwnLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
-        const na = empOwnLogs.filter(l => isNotApplicableStatus(l.status)).length;
+        const pendingCount = empOwnLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
+        const naCount = empOwnLogs.filter(l => isNotApplicableStatus(l.status)).length;
         
-        // حساب إجمالي المهام المتوقعة = (عدد المهام الروتينية المسندة × صافي أيام العمل)
+        // المعادلة المنصفة:
+        // إجمالي المهام المتوقعة = (عدد المهام الروتينية المسندة × صافي أيام العمل المتوقعة)
         const assignedRoutineTaskCount = assignments.filter(a => a.employeeId === emp.id).length;
         const totalExpectedTasks = assignedRoutineTaskCount * stats.netWorkDays;
         
-        // نسبة الكفاءة = (إجمالي المهام المنفذة ÷ إجمالي المهام المتوقعة)
-        const rate = totalExpectedTasks > 0 ? (completedCount / totalExpectedTasks) * 100 : 0;
+        // المقام الصافي = إجمالي المتوقع - المهام التي لا تنطبق (لأنها خارج إرادة الموظف)
+        const netExpectedTasks = Math.max(0, totalExpectedTasks - naCount);
+        
+        // نسبة الكفاءة = (المنفذ ÷ المقام الصافي)
+        const rate = netExpectedTasks > 0 ? (completedCount / netExpectedTasks) * 100 : 0;
         
         return { 
             id: emp.id, 
             name: emp.name, 
             completed: completedCount, 
-            pending, 
-            na, 
+            pending: pendingCount, 
+            na: naCount, 
             rate, 
             netWorkDays: stats.netWorkDays,
             daysRegistered: stats.registrationDays 
@@ -190,7 +195,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Competitive_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `Competitive_Performance_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
@@ -360,13 +365,13 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
 
                         {/* Detailed Table */}
                         <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-lg overflow-x-auto">
-                            <table className="w-full text-right text-sm min-w-[800px]">
+                            <table className="w-full text-right text-sm min-w-[850px]">
                                 <thead className="bg-gray-900 text-white font-black">
                                     <tr>
                                         <th className="px-6 py-5">الموظف</th>
                                         <th className="px-6 py-5 text-center">أيام العمل المتوقعة</th>
                                         <th className="px-6 py-5 text-center">أيام التسجيل</th>
-                                        <th className="px-6 py-5 text-center">المهام المنفذة</th>
+                                        <th className="px-6 py-5 text-center">المنفذة</th>
                                         <th className="px-6 py-5 text-center">غير منفذة</th>
                                         <th className="px-6 py-5 text-center">لا تنطبق</th>
                                         <th className="px-6 py-5 text-center">نسبة الكفاءة</th>
