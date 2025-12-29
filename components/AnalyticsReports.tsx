@@ -142,17 +142,21 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
         const stats = adherenceStatsForEmp(emp.id);
         const empOwnLogs = filteredLogs.filter(l => l.employeeId === emp.id);
         
-        const completed = empOwnLogs.filter(l => isCompletedStatus(l.status)).length;
+        const completedCount = empOwnLogs.filter(l => isCompletedStatus(l.status)).length;
         const pending = empOwnLogs.filter(l => l.status === 'Pending' || l.status === 'غير منفذة').length;
         const na = empOwnLogs.filter(l => isNotApplicableStatus(l.status)).length;
         
-        // النسبة بناءً على الأيام التي كان يجب أن يتواجد فيها
-        const rate = stats.netWorkDays > 0 ? (completed / stats.netWorkDays) * 100 : 0;
+        // حساب إجمالي المهام المتوقعة بناءً على عدد المهام الروتينية المسندة مضروباً في أيام العمل
+        const assignedRoutineTaskCount = assignments.filter(a => a.employeeId === emp.id).length;
+        const totalExpectedTasks = assignedRoutineTaskCount * stats.netWorkDays;
+        
+        // نسبة الكفاءة = (المهام المنفذة ÷ إجمالي المهام المتوقعة)
+        const rate = totalExpectedTasks > 0 ? (completedCount / totalExpectedTasks) * 100 : 0;
         
         return { 
             id: emp.id, 
             name: emp.name, 
-            completed, 
+            completed: completedCount, 
             pending, 
             na, 
             rate, 
@@ -160,7 +164,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
             daysPresent: stats.presentDays 
         };
       }).sort((a, b) => b.rate - a.rate);
-  }, [employees, filteredLogs, selectedComparisonIds, startDate, endDate]);
+  }, [employees, filteredLogs, selectedComparisonIds, startDate, endDate, assignments]);
 
   const toggleEmpSelection = (id: string) => {
     setSelectedComparisonIds(prev => 
@@ -177,9 +181,9 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
           csvContent += `"${new Date(log.logDate).toLocaleDateString('ar-EG')}","${selectedEmployee.name}","${log.description}","${log.status}"\n`;
         });
     } else {
-        csvContent += "الترتيب,الموظف,أيام العمل,المنفذة,غير المنفذة,لا تنطبق,النسبة\n";
+        csvContent += "الترتيب,الموظف,أيام العمل المتوقعة,أيام التسجيل,المهام المنفذة,الغير منفذة,لا تنطبق,نسبة الكفاءة\n";
         comparisonData.forEach((d, idx) => {
-            csvContent += `"${idx + 1}","${d.name}","${d.netWorkDays}","${d.completed}","${d.pending}","${d.na}","${d.rate.toFixed(1)}%"\n`;
+            csvContent += `"${idx + 1}","${d.name}","${d.netWorkDays}","${d.daysPresent}","${d.completed}","${d.pending}","${d.na}","${d.rate.toFixed(1)}%"\n`;
         });
     }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -354,14 +358,15 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                         </div>
 
                         {/* Detailed Table */}
-                        <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-lg">
-                            <table className="w-full text-right text-sm">
+                        <div className="overflow-hidden rounded-[2rem] border border-gray-200 bg-white shadow-lg overflow-x-auto">
+                            <table className="w-full text-right text-sm min-w-[800px]">
                                 <thead className="bg-gray-900 text-white font-black">
                                     <tr>
                                         <th className="px-6 py-5">الموظف</th>
-                                        <th className="px-6 py-5 text-center">أيام العمل</th>
-                                        <th className="px-6 py-5 text-center">منفذة</th>
-                                        <th className="px-6 py-5 text-center">غير منفذة</th>
+                                        <th className="px-6 py-5 text-center">أيام العمل المتوقعة</th>
+                                        <th className="px-6 py-5 text-center">أيام التسجيل</th>
+                                        <th className="px-6 py-5 text-center">المهام المنفذة</th>
+                                        <th className="px-6 py-5 text-center">الغير منفذة</th>
                                         <th className="px-6 py-5 text-center">لا تنطبق</th>
                                         <th className="px-6 py-5 text-center">نسبة الكفاءة</th>
                                     </tr>
@@ -371,6 +376,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                         <tr key={data.id} className="hover:bg-indigo-50/50 transition-colors">
                                             <td className="px-6 py-5 font-black text-gray-800">{data.name}</td>
                                             <td className="px-6 py-5 text-center font-bold text-gray-500">{data.netWorkDays}</td>
+                                            <td className="px-6 py-5 text-center font-bold text-blue-600">{data.daysPresent}</td>
                                             <td className="px-6 py-5 text-center font-bold text-emerald-600">{data.completed}</td>
                                             <td className="px-6 py-5 text-center font-bold text-red-500">{data.pending}</td>
                                             <td className="px-6 py-5 text-center font-bold text-gray-400">{data.na}</td>
@@ -380,7 +386,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
                                         </tr>
                                     ))}
                                     {comparisonData.length === 0 && (
-                                        <tr><td colSpan={6} className="p-20 text-center text-gray-400 font-bold">يرجى تحديد موظف واحد على الأقل للعرض</td></tr>
+                                        <tr><td colSpan={7} className="p-20 text-center text-gray-400 font-bold">يرجى تحديد موظف واحد على الأقل للعرض</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -399,7 +405,7 @@ export default function AnalyticsReports({ employees, logs, tasks = [], assignme
   );
 }
 
-// --- Sub-components (Carefully defined to avoid SyntaxErrors) ---
+// --- Sub-components ---
 
 const AnalyticCard: React.FC<{ label: string, value: string | number, icon: React.ReactNode, color: 'blue' | 'green' | 'orange', tooltip?: string }> = ({ label, value, icon, color, tooltip }) => {
     const config = {
