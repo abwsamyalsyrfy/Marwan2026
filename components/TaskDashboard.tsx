@@ -100,13 +100,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     onAddAnnouncement(ann);
     setNewAnn({ title: '', content: '', priority: 'Normal' });
     setShowAnnModal(false);
-    alert('تم نشر التعميم بنجاح.');
+    // التحديث سيتم فورياً لأن onAddAnnouncement في App.tsx يقوم بـ setAnnouncements
   };
 
   const handleLike = async (annId: string, hasLiked: boolean) => {
     try {
+      // Optimistic UI could be added here, but db toggle + background onRefresh is usually fast enough
       await db.announcements.toggleLike(annId, currentUser.id, hasLiked);
-      onRefresh(); 
+      onRefresh(); // ستقوم بجلب البيانات وتحديث الـ props مما يسبب إعادة رندر تلقائية
     } catch (e) { console.error(e); }
   };
 
@@ -114,7 +115,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     if (!window.confirm("هل تريد أرشفة هذا التعميم وإخفاءه من الواجهة الرئيسية لجميع المستخدمين؟")) return;
     try {
       await db.announcements.archive(annId);
-      onRefresh();
+      onRefresh(); 
     } catch (e) { console.error(e); }
   };
 
@@ -131,8 +132,8 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     };
 
     try {
+      setReplyInputs(prev => ({ ...prev, [annId]: '' })); // تصفير فوراً لتحسين UX
       await db.announcements.addReply(annId, newReply);
-      setReplyInputs(prev => ({ ...prev, [annId]: '' }));
       onRefresh();
     } catch (e) { console.error(e); }
   };
@@ -149,7 +150,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
       employeeId: currentUser.id,
       taskId: 'EXTRA',
       taskType: 'Extra',
-      status: 'Completed',
+      status: 'Completed', 
       description: `مهمة منجزة بناءً على التعميم: ${ann.title} - ${ann.content}`,
       approvalStatus: 'PendingApproval',
       sourceAnnouncementId: ann.id
@@ -157,7 +158,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
 
     try {
       await onSaveLogs([newExtraLog]);
-      alert('تم إرسال المهمة للمدير بنجاح. سيختفي هذا التعميم فور مصادقة المدير عليه.');
+      // سيختفي التعميم تلقائياً لأن relevantAnnouncements تعتمد على الـ logs المحدثة
     } catch (e) {
       console.error(e);
       alert('فشل تحويل التعميم لمهمة.');
@@ -184,17 +185,14 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   };
 
   const relevantAnnouncements = useMemo(() => {
-    // عرض التعميمات غير المؤرشفة فقط
     const activeAnnouncements = announcements.filter(ann => !ann.archived);
-    
-    // إخفاء التعميمات التي قام الموظف بتحويلها لمهمة إضافية وتمت المصادقة عليها
     const approvedTaskAnnIds = logs
       .filter(l => l.employeeId === currentUser.id && l.approvalStatus === 'Approved' && l.sourceAnnouncementId)
       .map(l => l.sourceAnnouncementId);
 
     const userFilteredAnnouncements = activeAnnouncements.filter(ann => !approvedTaskAnnIds.includes(ann.id));
 
-    if (isAdmin) return activeAnnouncements; // المدير يرى كل النشط
+    if (isAdmin) return activeAnnouncements; 
     return userFilteredAnnouncements.filter(ann => 
       ann.targetType === 'All' || (ann.targetEmployeeIds && ann.targetEmployeeIds.includes(currentUser.id))
     );
@@ -450,8 +448,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
              const likesCount = ann.likes?.length || 0;
              const repliesCount = ann.replies?.length || 0;
              const isConverting = convertingAnnIds.includes(ann.id);
-             
-             // Check if user has already sent a request for this specific announcement
              const hasSentConversionRequest = logs.some(l => l.employeeId === currentUser.id && l.sourceAnnouncementId === ann.id);
 
              return (
@@ -497,7 +493,6 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                              {repliesCount > 0 ? `${repliesCount} ردود` : 'إضافة رد'}
                            </button>
 
-                           {/* New Action: Convert to Extra Task */}
                            {!isAdmin && (
                              <button 
                                onClick={() => handleConvertToExtraTask(ann)}

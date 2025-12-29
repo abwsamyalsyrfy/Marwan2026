@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import TaskDashboard from './components/TaskDashboard';
 import DailyLogger from './components/DailyLogger';
@@ -28,39 +28,39 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // --- 1. Load Data on Startup ---
-  useEffect(() => {
-    const initData = async () => {
-      setIsLoading(true);
-      try {
-        const [empData, taskData, assignData, logData, sysLogData, announceData] = await Promise.all([
-          db.employees.list(),
-          db.tasks.list(),
-          db.assignments.list(),
-          db.logs.list(),
-          db.systemLogs.list(),
-          db.announcements.list()
-        ]);
-        
-        setEmployees(empData);
-        setTasks(taskData);
-        setAssignments(assignData);
-        setLogs(logData);
-        setSystemLogs(sysLogData);
-        setAnnouncements(announceData);
-        setIsOfflineMode(false);
-        setIsPermissionError(false);
-      } catch (error: any) {
-        console.error("Failed to load data:", error?.message || error);
-        if (error?.code === 'permission-denied') setIsPermissionError(true);
-        setIsOfflineMode(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initData();
+  // --- 1. Load Data Function (Reusable for refresh without reload) ---
+  const loadData = useCallback(async (showLoader = false) => {
+    if (showLoader) setIsLoading(true);
+    try {
+      const [empData, taskData, assignData, logData, sysLogData, announceData] = await Promise.all([
+        db.employees.list(),
+        db.tasks.list(),
+        db.assignments.list(),
+        db.logs.list(),
+        db.systemLogs.list(),
+        db.announcements.list()
+      ]);
+      
+      setEmployees(empData);
+      setTasks(taskData);
+      setAssignments(assignData);
+      setLogs(logData);
+      setSystemLogs(sysLogData);
+      setAnnouncements(announceData);
+      setIsOfflineMode(false);
+      setIsPermissionError(false);
+    } catch (error: any) {
+      console.error("Failed to load data:", error?.message || error);
+      if (error?.code === 'permission-denied') setIsPermissionError(true);
+      setIsOfflineMode(true);
+    } finally {
+      if (showLoader) setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
 
   const recordSystemAction = async (actor: Employee | null, actionType: SystemAuditLog['actionType'], target: string, details: string) => {
     try {
@@ -119,6 +119,7 @@ const App: React.FC = () => {
   const handleSaveLogs = async (newLogs: TaskLog[]) => {
     try {
       const savedLogs = await db.logs.add(newLogs);
+      // تحديث الحالة فورياً بدمج السجلات الجديدة
       setLogs(prev => [...savedLogs, ...prev]); 
       if (activeTab === 'daily-log') alert("تم حفظ التقارير بنجاح.");
       if (currentUser?.permissions.includes(PERMISSIONS.VIEW_DASHBOARD) && activeTab === 'daily-log') {
@@ -297,7 +298,8 @@ service cloud.firestore {
             logs={logs} 
             employees={employees} 
             announcements={announcements} 
-            onRefresh={() => window.location.reload()} 
+            // تحديث onRefresh ليعمل في الخلفية دون إعادة تحميل الصفحة
+            onRefresh={() => loadData(false)} 
             onStartLogging={() => setActiveTab('daily-log')} 
             onApproveLog={handleApproveLog} 
             onRejectLog={handleRejectLog} 
