@@ -36,6 +36,7 @@ export interface TaskLog {
   approvedBy?: string;
   approvedAt?: string;
   managerNote?: string;
+  sourceAnnouncementId?: string; // New: To link an extra task to an announcement
 }
 
 export interface AnnouncementReply {

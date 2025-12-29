@@ -24,11 +24,12 @@ interface TaskDashboardProps {
   onRejectLog?: (logId: string, reason: string) => void;
   onCommitLog?: (logId: string) => void; 
   onAddAnnouncement?: (ann: Announcement) => void;
+  onSaveLogs?: (newLogs: TaskLog[]) => void;
 }
 
 const TaskDashboard: React.FC<TaskDashboardProps> = ({ 
   currentUser, logs, employees = [], assignments = [], announcements = [],
-  onRefresh, onStartLogging, onApproveLog, onRejectLog, onCommitLog, onAddAnnouncement
+  onRefresh, onStartLogging, onApproveLog, onRejectLog, onCommitLog, onAddAnnouncement, onSaveLogs
 }) => {
   const isAdmin = currentUser.role === 'Admin';
   
@@ -39,6 +40,7 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
   const [dismissedRejectedIds, setDismissedRejectedIds] = useState<string[]>([]);
   const [committingIds, setCommittingIds] = useState<string[]>([]);
   const [processingLogIds, setProcessingLogIds] = useState<string[]>([]);
+  const [convertingAnnIds, setConvertingAnnIds] = useState<string[]>([]);
   
   // Quick Announcement State
   const [showAnnModal, setShowAnnModal] = useState(false);
@@ -135,6 +137,35 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     } catch (e) { console.error(e); }
   };
 
+  const handleConvertToExtraTask = async (ann: Announcement) => {
+    if (!onSaveLogs) return;
+    if (!window.confirm("هل تريد تحويل هذا التعميم إلى مهمة إضافية منجزة؟ سيتم إرسالها للمدير للمصادقة.")) return;
+    
+    setConvertingAnnIds(prev => [...prev, ann.id]);
+    
+    const newExtraLog: TaskLog = {
+      id: `EXTRA-ANN-${Date.now()}`,
+      logDate: new Date().toISOString(),
+      employeeId: currentUser.id,
+      taskId: 'EXTRA',
+      taskType: 'Extra',
+      status: 'Completed',
+      description: `مهمة منجزة بناءً على التعميم: ${ann.title} - ${ann.content}`,
+      approvalStatus: 'PendingApproval',
+      sourceAnnouncementId: ann.id
+    };
+
+    try {
+      await onSaveLogs([newExtraLog]);
+      alert('تم إرسال المهمة للمدير بنجاح. سيختفي هذا التعميم فور مصادقة المدير عليه.');
+    } catch (e) {
+      console.error(e);
+      alert('فشل تحويل التعميم لمهمة.');
+    } finally {
+      setConvertingAnnIds(prev => prev.filter(id => id !== ann.id));
+    }
+  };
+
   const handleCommitClick = async (logId: string) => {
     setCommittingIds(prev => [...prev, logId]);
     if (onCommitLog) {
@@ -156,11 +187,18 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
     // عرض التعميمات غير المؤرشفة فقط
     const activeAnnouncements = announcements.filter(ann => !ann.archived);
     
-    if (isAdmin) return activeAnnouncements;
-    return activeAnnouncements.filter(ann => 
+    // إخفاء التعميمات التي قام الموظف بتحويلها لمهمة إضافية وتمت المصادقة عليها
+    const approvedTaskAnnIds = logs
+      .filter(l => l.employeeId === currentUser.id && l.approvalStatus === 'Approved' && l.sourceAnnouncementId)
+      .map(l => l.sourceAnnouncementId);
+
+    const userFilteredAnnouncements = activeAnnouncements.filter(ann => !approvedTaskAnnIds.includes(ann.id));
+
+    if (isAdmin) return activeAnnouncements; // المدير يرى كل النشط
+    return userFilteredAnnouncements.filter(ann => 
       ann.targetType === 'All' || (ann.targetEmployeeIds && ann.targetEmployeeIds.includes(currentUser.id))
     );
-  }, [announcements, currentUser.id, isAdmin]);
+  }, [announcements, currentUser.id, isAdmin, logs]);
 
   const stats = useMemo(() => {
     const todayStr = new Date().toLocaleDateString('en-CA'); 
@@ -411,6 +449,10 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
              const hasLiked = ann.likes?.includes(currentUser.id) || false;
              const likesCount = ann.likes?.length || 0;
              const repliesCount = ann.replies?.length || 0;
+             const isConverting = convertingAnnIds.includes(ann.id);
+             
+             // Check if user has already sent a request for this specific announcement
+             const hasSentConversionRequest = logs.some(l => l.employeeId === currentUser.id && l.sourceAnnouncementId === ann.id);
 
              return (
                <div key={ann.id} className={`rounded-[2rem] p-6 shadow-sm border-r-8 transition-all animate-slide-up bg-white ${
@@ -454,6 +496,22 @@ const TaskDashboard: React.FC<TaskDashboardProps> = ({
                              <MessageSquare size={16} />
                              {repliesCount > 0 ? `${repliesCount} ردود` : 'إضافة رد'}
                            </button>
+
+                           {/* New Action: Convert to Extra Task */}
+                           {!isAdmin && (
+                             <button 
+                               onClick={() => handleConvertToExtraTask(ann)}
+                               disabled={isConverting || hasSentConversionRequest}
+                               className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${
+                                 hasSentConversionRequest 
+                                 ? 'bg-amber-50 text-amber-600 opacity-70' 
+                                 : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:shadow-sm'
+                               }`}
+                             >
+                               {isConverting ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} fill={hasSentConversionRequest ? "currentColor" : "none"} />}
+                               {hasSentConversionRequest ? 'بانتظار المصادقة كـ مهمة' : 'تحويل لمهمة إضافية'}
+                             </button>
+                           )}
 
                            {isAdmin && (
                              <button 
